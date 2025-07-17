@@ -48,7 +48,7 @@ func (t *TextNode) Emit(indent, target string) string {
 	replaced = strings.ReplaceAll(replaced, "\"", "\\\"")
 
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("%s%s.WriteString(%q)\n", indent, target, replaced))
+	out.WriteString(fmt.Sprintf("%sfmt.Fprintln(&%s, %q)\n", indent, target, replaced))
 	if len(params) > 0 {
 		out.WriteString(fmt.Sprintf("%sparams = append(params, %s)\n", indent, strings.Join(params, ", ")))
 	}
@@ -72,20 +72,20 @@ func (f *FuncNode) Emit(indent, target string) string {
 	b.WriteString(fmt.Sprintf("%s\tif c != \"\" {\n", indent))
 	switch f.Name {
 	case "where":
-		b.WriteString(fmt.Sprintf("%s\t\t%s.WriteString(\"WHERE \")\n", indent, target))
+		b.WriteString(fmt.Sprintf("%s\t\tfmt.Fprintln(&%s, \"WHERE \")\n", indent, target))
 		b.WriteString(fmt.Sprintf("%s\t\tif len(c) >= 3 && strings.EqualFold(c[len(c)-3:], \"AND\") {\n", indent))
 		b.WriteString(fmt.Sprintf("%s\t\t\tc = strings.TrimSpace(c[:len(c)-3])\n", indent))
 		b.WriteString(fmt.Sprintf("%s\t\t} else if len(c) >= 2 && strings.EqualFold(c[len(c)-2:], \"OR\") {\n", indent))
 		b.WriteString(fmt.Sprintf("%s\t\t\tc = strings.TrimSpace(c[:len(c)-2])\n", indent))
 		b.WriteString(fmt.Sprintf("%s\t\t}\n", indent))
-		b.WriteString(fmt.Sprintf("%s\t\t%s.WriteString(\"WHERE \")\n", indent, target))
-		b.WriteString(fmt.Sprintf("%s\t\t%s.WriteString(c)\n", indent, target))
+		b.WriteString(fmt.Sprintf("%s\t\tfmt.Fprintln(&%s, \"WHERE \")\n", indent, target))
+		b.WriteString(fmt.Sprintf("%s\t\tfmt.Fprintln(&%s, c)\n", indent, target))
 	case "set":
 		b.WriteString(fmt.Sprintf("%s\t\tif strings.HasSuffix(c, \",\") {\n", indent))
 		b.WriteString(fmt.Sprintf("%s\t\t\tc = strings.TrimSpace(strings.TrimRight(c, \",\"))\n", indent))
 		b.WriteString(fmt.Sprintf("%s\t\t}\n", indent))
-		b.WriteString(fmt.Sprintf("%s\t\t%s.WriteString(\"SET \")\n", indent, target))
-		b.WriteString(fmt.Sprintf("%s\t\t%s.WriteString(c)\n", indent, target))
+		b.WriteString(fmt.Sprintf("%s\t\tfmt.Fprintln(&%s, \"SET \")\n", indent, target))
+		b.WriteString(fmt.Sprintf("%s\t\tfmt.Fprintln(&%s, c)\n", indent, target))
 	default:
 		panic(fmt.Sprintf("unsupported func %q in sql tempalte\n", f.Name))
 	}

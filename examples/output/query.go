@@ -4,6 +4,7 @@ package output
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	time "time"
 
@@ -37,7 +38,7 @@ func (e QueryImpl[T]) GetByID(ctx context.Context, id int) (T, error) {
 	var sb strings.Builder
 	params := make([]any, 0, 2)
 
-	sb.WriteString("SELECT * FROM ? WHERE id=? AND name = \\\"@name\\\"")
+	fmt.Fprintln(&sb, "SELECT * FROM ? WHERE id=? AND name = \\\"@name\\\"")
 	params = append(params, clause.CurrentTable, id)
 
 	var result T
@@ -49,7 +50,7 @@ func (e QueryImpl[T]) FilterWithColumn(ctx context.Context, column string, value
 	var sb strings.Builder
 	params := make([]any, 0, 4)
 
-	sb.WriteString("SELECT * FROM ? WHERE ?=?")
+	fmt.Fprintln(&sb, "SELECT * FROM ? WHERE ?=?")
 	params = append(params, clause.CurrentTable, gorm.Expr("?", column), value)
 
 	var result T
@@ -61,12 +62,12 @@ func (e QueryImpl[T]) QueryWith(ctx context.Context, user models.User) (T, error
 	var sb strings.Builder
 	params := make([]any, 0, 2)
 
-	sb.WriteString("SELECT * FROM users")
+	fmt.Fprintln(&sb, "SELECT * FROM users")
 	if user.ID > 0 {
-		sb.WriteString("WHERE id=?")
+		fmt.Fprintln(&sb, "WHERE id=?")
 		params = append(params, user.ID)
 	} else if user.Name != "" {
-		sb.WriteString("WHERE username=?")
+		fmt.Fprintln(&sb, "WHERE username=?")
 		params = append(params, user.Name)
 	}
 
@@ -79,33 +80,33 @@ func (e QueryImpl[T]) UpdateInfo(ctx context.Context, user models.User, id int) 
 	var sb strings.Builder
 	params := make([]any, 0, 4)
 
-	sb.WriteString("UPDATE ?")
+	fmt.Fprintln(&sb, "UPDATE ?")
 	params = append(params, clause.CurrentTable)
 	{
 		var tmp strings.Builder
 		if user.Name != "" {
-			tmp.WriteString("username=?,")
+			fmt.Fprintln(&tmp, "username=?,")
 			params = append(params, user.Name)
 		}
 		if user.Age > 0 {
-			tmp.WriteString("age=?,")
+			fmt.Fprintln(&tmp, "age=?,")
 			params = append(params, user.Age)
 		}
 		if user.Age >= 18 {
-			tmp.WriteString("is_adult=1")
+			fmt.Fprintln(&tmp, "is_adult=1")
 		} else {
-			tmp.WriteString("is_adult=0")
+			fmt.Fprintln(&tmp, "is_adult=0")
 		}
 		c := strings.TrimSpace(tmp.String())
 		if c != "" {
 			if strings.HasSuffix(c, ",") {
 				c = strings.TrimSpace(strings.TrimRight(c, ","))
 			}
-			sb.WriteString("SET ")
-			sb.WriteString(c)
+			fmt.Fprintln(&sb, "SET ")
+			fmt.Fprintln(&sb, c)
 		}
 	}
-	sb.WriteString("WHERE id=?")
+	fmt.Fprintln(&sb, "WHERE id=?")
 	params = append(params, id)
 
 	return e.Exec(ctx, sb.String(), params...)
@@ -115,26 +116,26 @@ func (e QueryImpl[T]) Filter(ctx context.Context, users []models.User) ([]T, err
 	var sb strings.Builder
 	params := make([]any, 0, 13)
 
-	sb.WriteString("SELECT * FROM ?")
+	fmt.Fprintln(&sb, "SELECT * FROM ?")
 	params = append(params, clause.CurrentTable)
 	{
 		var tmp strings.Builder
 		for _, user := range users {
 			if user.Name != "" && user.Age > 0 {
-				tmp.WriteString("(username = ? AND age=? AND role LIKE concat(\\\"%\\\",?,\\\"%\\\")) OR")
+				fmt.Fprintln(&tmp, "(username = ? AND age=? AND role LIKE concat(\\\"%\\\",?,\\\"%\\\")) OR")
 				params = append(params, user.Name, user.Age, user.Role)
 			}
 		}
 		c := strings.TrimSpace(tmp.String())
 		if c != "" {
-			sb.WriteString("WHERE ")
+			fmt.Fprintln(&sb, "WHERE ")
 			if len(c) >= 3 && strings.EqualFold(c[len(c)-3:], "AND") {
 				c = strings.TrimSpace(c[:len(c)-3])
 			} else if len(c) >= 2 && strings.EqualFold(c[len(c)-2:], "OR") {
 				c = strings.TrimSpace(c[:len(c)-2])
 			}
-			sb.WriteString("WHERE ")
-			sb.WriteString(c)
+			fmt.Fprintln(&sb, "WHERE ")
+			fmt.Fprintln(&sb, c)
 		}
 	}
 
@@ -147,7 +148,7 @@ func (e QueryImpl[T]) FilterByNameAndAge(ctx context.Context, name string, age i
 	var sb strings.Builder
 	params := make([]any, 0, 2)
 
-	sb.WriteString("name=? AND age=?")
+	fmt.Fprintln(&sb, "name=? AND age=?")
 	params = append(params, name, age)
 
 	e.Where(sb.String(), params...)
@@ -159,28 +160,28 @@ func (e QueryImpl[T]) FilterWithTime(ctx context.Context, start time.Time, end t
 	var sb strings.Builder
 	params := make([]any, 0, 3)
 
-	sb.WriteString("SELECT * FROM ?")
+	fmt.Fprintln(&sb, "SELECT * FROM ?")
 	params = append(params, clause.CurrentTable)
 	{
 		var tmp strings.Builder
 		if !start.IsZero() {
-			tmp.WriteString("created_time > ?")
+			fmt.Fprintln(&tmp, "created_time > ?")
 			params = append(params, start)
 		}
 		if !end.IsZero() {
-			tmp.WriteString("AND created_time < ?")
+			fmt.Fprintln(&tmp, "AND created_time < ?")
 			params = append(params, end)
 		}
 		c := strings.TrimSpace(tmp.String())
 		if c != "" {
-			sb.WriteString("WHERE ")
+			fmt.Fprintln(&sb, "WHERE ")
 			if len(c) >= 3 && strings.EqualFold(c[len(c)-3:], "AND") {
 				c = strings.TrimSpace(c[:len(c)-3])
 			} else if len(c) >= 2 && strings.EqualFold(c[len(c)-2:], "OR") {
 				c = strings.TrimSpace(c[:len(c)-2])
 			}
-			sb.WriteString("WHERE ")
-			sb.WriteString(c)
+			fmt.Fprintln(&sb, "WHERE ")
+			fmt.Fprintln(&sb, c)
 		}
 	}
 
