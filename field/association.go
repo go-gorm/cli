@@ -25,10 +25,16 @@ func (s Struct[T]) WithName(name string) Struct[T] {
 	return Struct[T]{associationWithConditions[T]{name: name}}
 }
 
+// Name returns the association name (field name on the parent model)
+func (s Struct[T]) Name() string { return s.name }
+
 // WithName creates a new Slice with the specified field name
 func (s Slice[T]) WithName(name string) Slice[T] {
 	return Slice[T]{associationWithConditions[T]{name: name}}
 }
+
+// Name returns the association name (field name on the parent model)
+func (s Slice[T]) Name() string { return s.name }
 
 // Where adds conditions to a Struct field
 func (s Struct[T]) Where(conditions ...clause.Expression) associationWithConditions[T] {

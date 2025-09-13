@@ -12,6 +12,9 @@ type Time struct {
 	column clause.Column
 }
 
+// Column returns the underlying column for this field
+func (t Time) Column() clause.Column { return t.column }
+
 // WithColumn creates a new Time field with the specified column name.
 // This method allows you to change the column name while keeping other properties.
 //
@@ -242,4 +245,17 @@ func (t Time) Desc() clause.OrderByColumn {
 // OrderExpr creates a custom ORDER BY expression with parameters.
 func (t Time) OrderExpr(expr string, values ...any) clause.Expression {
 	return clause.Expr{SQL: expr, Vars: values}
+}
+
+// buildSelectArg allows Time to be passed to Select(...)
+func (t Time) buildSelectArg() any { return t.column }
+
+// As creates an alias for this column usable in Select(...)
+func (t Time) As(alias string) Selectable {
+	return selectExpr{clause.Expr{SQL: "? AS ?", Vars: []any{t.column, clause.Column{Name: alias}}}}
+}
+
+// SelectExpr wraps a custom expression built from this field for Select(...)
+func (t Time) SelectExpr(sql string, values ...any) Selectable {
+	return selectExpr{clause.Expr{SQL: sql, Vars: values}}
 }

@@ -10,6 +10,9 @@ type Bytes struct {
 	column clause.Column
 }
 
+// Column returns the underlying column for this field
+func (b Bytes) Column() clause.Column { return b.column }
+
 // WithColumn creates a new Bytes field with the specified column name.
 // This method allows you to change the column name while keeping other properties.
 //
@@ -130,4 +133,17 @@ func (b Bytes) Desc() clause.OrderByColumn {
 // OrderExpr creates a custom ORDER BY expression with parameters.
 func (b Bytes) OrderExpr(expr string, values ...any) clause.Expression {
 	return clause.Expr{SQL: expr, Vars: values}
+}
+
+// buildSelectArg allows Bytes to be passed to Select(...)
+func (b Bytes) buildSelectArg() any { return b.column }
+
+// As creates an alias for this column usable in Select(...)
+func (b Bytes) As(alias string) Selectable {
+	return selectExpr{clause.Expr{SQL: "? AS ?", Vars: []any{b.column, clause.Column{Name: alias}}}}
+}
+
+// SelectExpr wraps a custom expression built from this field for Select(...)
+func (b Bytes) SelectExpr(sql string, values ...any) Selectable {
+	return selectExpr{clause.Expr{SQL: sql, Vars: values}}
 }

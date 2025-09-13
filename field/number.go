@@ -12,6 +12,9 @@ type Number[T constraints.Integer | constraints.Float] struct {
 	column clause.Column
 }
 
+// Column returns the underlying column for this field
+func (n Number[T]) Column() clause.Column { return n.column }
+
 // WithColumn creates a new Number field with the specified column name.
 // This method allows you to change the column name while keeping other properties.
 //
@@ -194,4 +197,17 @@ func (n Number[T]) Desc() clause.OrderByColumn {
 // OrderExpr creates a custom ORDER BY expression with parameters.
 func (n Number[T]) OrderExpr(expr string, values ...any) clause.Expression {
 	return clause.Expr{SQL: expr, Vars: values}
+}
+
+// buildSelectArg allows Number to be passed to Select(...)
+func (n Number[T]) buildSelectArg() any { return n.column }
+
+// As creates an alias for this column usable in Select(...)
+func (n Number[T]) As(alias string) Selectable {
+	return selectExpr{clause.Expr{SQL: "? AS ?", Vars: []any{n.column, clause.Column{Name: alias}}}}
+}
+
+// SelectExpr wraps a custom expression built from this field for Select(...)
+func (n Number[T]) SelectExpr(sql string, values ...any) Selectable {
+	return selectExpr{clause.Expr{SQL: sql, Vars: values}}
 }
