@@ -186,11 +186,6 @@ func (f Field[T]) OrderExpr(expr string, values ...any) clause.Expression {
 	return clause.Expr{SQL: expr, Vars: values}
 }
 
-// Selectable is a marker for items that can be used in Select(...).
-// Implemented by basic fields (as columns) and field-built select expressions.
-// It intentionally uses an unexported method so only types in this package can implement it.
-type Selectable interface{ buildSelectArg() any }
-
 // buildSelectArg allows Field[T] to be used directly in Select(...)
 func (f Field[T]) buildSelectArg() any { return f.column }
 
@@ -206,18 +201,5 @@ func (f Field[T]) As(alias string) Selectable {
 
 // SelectExpr wraps a custom expression built from this field for Select(...)
 func (f Field[T]) SelectExpr(sql string, values ...any) Selectable {
-    return selectExpr{clause.Expr{SQL: sql, Vars: values}}
-}
-
-// SelectArgs splits selectable items into columns and expressions for clause.Select usage.
-func SelectArgs(items ...Selectable) (cols []clause.Column, exprs []clause.Expression) {
-    for _, it := range items {
-        switch v := it.buildSelectArg().(type) {
-        case clause.Column:
-            cols = append(cols, v)
-        case clause.Expression:
-            exprs = append(exprs, v)
-        }
-    }
-    return
+	return selectExpr{clause.Expr{SQL: sql, Vars: values}}
 }
