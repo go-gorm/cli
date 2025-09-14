@@ -6,7 +6,7 @@ import (
 
 type (
 	// QueryInterface defines the interface for building conditions
-	QueryInterface = clause.Expr
+	QueryInterface = clause.Expression
 
 	// AssociationInterface defines association
 	AssociationInterface interface {
