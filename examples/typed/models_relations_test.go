@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/cli/gorm/examples/models"
 	generated "gorm.io/cli/gorm/examples/typed/models"
-	"gorm.io/cli/gorm/generics"
+	"gorm.io/cli/gorm/typed"
 )
 
 func TestAssociation_Create_SingleParent(t *testing.T) {
@@ -17,7 +17,7 @@ func TestAssociation_Create_SingleParent(t *testing.T) {
 	ctx := context.Background()
 
 	// Create one pet for the single parent
-	_, err := generics.G[models.User](db).
+	_, err := typed.G[models.User](db).
 		Where(generated.User.ID.Eq(u.ID)).
 		Set(
 			generated.User.Pets.Create(
@@ -30,7 +30,7 @@ func TestAssociation_Create_SingleParent(t *testing.T) {
 	}
 
 	// Verify pet created and associated
-	pets, err := generics.G[models.Pet](db).
+	pets, err := typed.G[models.Pet](db).
 		Where(generated.Pet.Name.Eq("test-pet")).
 		Find(ctx)
 	if err != nil {
@@ -52,7 +52,7 @@ func TestAssociation_Create_MultipleParents(t *testing.T) {
 	ctx := context.Background()
 
 	// Create one pet for each matched parent (two users)
-	_, err := generics.G[models.User](db).
+	_, err := typed.G[models.User](db).
 		Where(generated.User.Name.In(u1.Name, u2.Name)).
 		Set(
 			generated.User.Pets.Create(
@@ -65,7 +65,7 @@ func TestAssociation_Create_MultipleParents(t *testing.T) {
 	}
 
 	// Verify two pets created with correct names
-	pets, err := generics.G[models.Pet](db).
+	pets, err := typed.G[models.Pet](db).
 		Where(generated.Pet.Name.Eq("multi-pet")).
 		Find(ctx)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestAssociation_Update_WithConditions(t *testing.T) {
 	ctx := context.Background()
 
 	// Update the associated pet name where name='old'
-	_, err := generics.G[models.User](db).
+	_, err := typed.G[models.User](db).
 		Where(generated.User.ID.Eq(u.ID)).
 		Set(
 			generated.User.Pets.Where(generated.Pet.Name.Eq("old")).Update(
@@ -102,7 +102,7 @@ func TestAssociation_Update_WithConditions(t *testing.T) {
 	}
 
 	// Verify pet name was updated
-	pets, err := generics.G[models.Pet](db).
+	pets, err := typed.G[models.Pet](db).
 		Where(generated.Pet.Name.Eq("new")).
 		Find(ctx)
 	if err != nil {

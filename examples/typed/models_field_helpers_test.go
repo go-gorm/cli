@@ -7,7 +7,7 @@ import (
 	"gorm.io/cli/gorm/examples/models"
 	generated "gorm.io/cli/gorm/examples/typed/models"
 	"gorm.io/cli/gorm/field"
-	"gorm.io/cli/gorm/generics"
+	"gorm.io/cli/gorm/typed"
 )
 
 func TestFieldHelpers_MultipleConditions_FindIntoSlice(t *testing.T) {
@@ -16,7 +16,7 @@ func TestFieldHelpers_MultipleConditions_FindIntoSlice(t *testing.T) {
 
 	// Multiple conditions: age > 18 AND role = "active"
 	var usersOver18Active []models.User
-	if err := generics.G[models.User](db).
+	if err := typed.G[models.User](db).
 		Where(
 			field.QueryInterface(generated.User.Age.Gt(18)),
 			field.QueryInterface(generated.User.Role.Eq("active")),
@@ -34,14 +34,14 @@ func TestFieldHelpers_Update_UsingHelpers(t *testing.T) {
 	seedUsers(t, db)
 
 	// Update using helper-based WHERE: set role from "pending" -> "active"
-	if _, err := generics.G[models.User](db).
+	if _, err := typed.G[models.User](db).
 		Where(generated.User.Role.Eq("pending")).
 		Update(context.Background(), "role", "active"); err != nil {
 		t.Fatalf("Update using helpers failed: %v", err)
 	}
 
 	// Verify: no more pending
-	pending, err := generics.G[models.User](db).
+	pending, err := typed.G[models.User](db).
 		Where(generated.User.Role.Eq("pending")).
 		Find(context.Background())
 	if err != nil {
@@ -52,7 +52,7 @@ func TestFieldHelpers_Update_UsingHelpers(t *testing.T) {
 	}
 
 	// And active count increased to 4
-	active, err := generics.G[models.User](db).
+	active, err := typed.G[models.User](db).
 		Where(generated.User.Role.Eq("active")).
 		Find(context.Background())
 	if err != nil {
@@ -70,7 +70,7 @@ func TestFieldHelpers_Update_WithSetAssignments(t *testing.T) {
 	ctx := context.Background()
 
 	// Use Set(assignments).Update(ctx) to flip all pending users to active
-	rows, err := generics.G[models.User](db).
+	rows, err := typed.G[models.User](db).
 		Where(generated.User.Role.Eq("pending")).
 		Set(
 			generated.User.Role.Set("active"),
@@ -84,7 +84,7 @@ func TestFieldHelpers_Update_WithSetAssignments(t *testing.T) {
 	}
 
 	// Verify all users are now active (originally 2 active + 2 pending)
-	active, err := generics.G[models.User](db).
+	active, err := typed.G[models.User](db).
 		Where(generated.User.Role.Eq("active")).
 		Count(ctx, "*")
 	if err != nil {
@@ -101,7 +101,7 @@ func TestFieldHelpers_Create_WithSetAssignments(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a new user using Set(assignments)
-	err := generics.G[models.User](db).
+	err := typed.G[models.User](db).
 		Set(
 			generated.User.Name.Set("newuser"),
 			generated.User.Age.Set(25),
@@ -113,7 +113,7 @@ func TestFieldHelpers_Create_WithSetAssignments(t *testing.T) {
 	}
 
 	// Verify user was created
-	users, err := generics.G[models.User](db).
+	users, err := typed.G[models.User](db).
 		Where(generated.User.Name.Eq("newuser")).
 		Find(ctx)
 	if err != nil {

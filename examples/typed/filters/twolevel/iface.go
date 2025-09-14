@@ -6,24 +6,24 @@ import (
 	"context"
 	"strings"
 
-	"gorm.io/cli/gorm/generics"
+	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func I1[T any](db *gorm.DB, opts ...clause.Expression) _I1Interface[T] {
 	return _I1Impl[T]{
-		Interface: generics.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _I1Interface[T any] interface {
-	generics.Interface[T]
+	typed.Interface[T]
 	ByID(ctx context.Context, id int) (T, error)
 }
 
 type _I1Impl[T any] struct {
-	generics.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _I1Impl[T]) ByID(ctx context.Context, id int) (T, error) {
@@ -40,17 +40,17 @@ func (e _I1Impl[T]) ByID(ctx context.Context, id int) (T, error) {
 
 func I2[T any](db *gorm.DB, opts ...clause.Expression) _I2Interface[T] {
 	return _I2Impl[T]{
-		Interface: generics.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _I2Interface[T any] interface {
-	generics.Interface[T]
+	typed.Interface[T]
 	ByID2(ctx context.Context, id int) (T, error)
 }
 
 type _I2Impl[T any] struct {
-	generics.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _I2Impl[T]) ByID2(ctx context.Context, id int) (T, error) {

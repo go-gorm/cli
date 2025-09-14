@@ -9,19 +9,19 @@ import (
 	"time"
 
 	"gorm.io/cli/gorm/examples/models"
-	"gorm.io/cli/gorm/generics"
+	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func Query[T any](db *gorm.DB, opts ...clause.Expression) _QueryInterface[T] {
 	return _QueryImpl[T]{
-		Interface: generics.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _QueryInterface[T any] interface {
-	generics.Interface[T]
+	typed.Interface[T]
 	GetByID(ctx context.Context, id int) (T, error)
 	FilterWithColumn(ctx context.Context, column string, value string) (T, error)
 	QueryWith(ctx context.Context, user models.User) (T, error)
@@ -32,7 +32,7 @@ type _QueryInterface[T any] interface {
 }
 
 type _QueryImpl[T any] struct {
-	generics.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _QueryImpl[T]) GetByID(ctx context.Context, id int) (T, error) {

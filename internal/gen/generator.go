@@ -23,9 +23,9 @@ import (
 
 type (
 	Generator struct {
-		StrictTyped bool
-		Files       map[string]*File
-		outPath     string
+		Typed   bool
+		Files   map[string]*File
+		outPath string
 	}
 	File struct {
 		Package           string
@@ -510,8 +510,8 @@ func (p *File) tryParseConfig(vs *ast.ValueSpec) *genconfig.Config {
 	return nil
 }
 
-func (p File) UseGenerics() bool {
-	return p.Generator.StrictTyped
+func (p File) UsedTypedAPI() bool {
+	return p.Generator.Typed
 }
 
 // parseConfigLiteral parses a cmd.Config composite literal into a Config value.

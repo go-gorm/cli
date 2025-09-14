@@ -6,24 +6,24 @@ import (
 	"context"
 	"strings"
 
-	"gorm.io/cli/gorm/generics"
+	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func QueryUser[T any](db *gorm.DB, opts ...clause.Expression) _QueryUserInterface[T] {
 	return _QueryUserImpl[T]{
-		Interface: generics.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _QueryUserInterface[T any] interface {
-	generics.Interface[T]
+	typed.Interface[T]
 	ByID(ctx context.Context, id int) (T, error)
 }
 
 type _QueryUserImpl[T any] struct {
-	generics.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _QueryUserImpl[T]) ByID(ctx context.Context, id int) (T, error) {
@@ -40,17 +40,17 @@ func (e _QueryUserImpl[T]) ByID(ctx context.Context, id int) (T, error) {
 
 func QueryOrder[T any](db *gorm.DB, opts ...clause.Expression) _QueryOrderInterface[T] {
 	return _QueryOrderImpl[T]{
-		Interface: generics.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _QueryOrderInterface[T any] interface {
-	generics.Interface[T]
+	typed.Interface[T]
 	ByNumber(ctx context.Context, no string) (T, error)
 }
 
 type _QueryOrderImpl[T any] struct {
-	generics.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _QueryOrderImpl[T]) ByNumber(ctx context.Context, no string) (T, error) {

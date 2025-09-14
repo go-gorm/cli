@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/cli/gorm/examples/models"
 	generated "gorm.io/cli/gorm/examples/typed/models"
-	"gorm.io/cli/gorm/generics"
+	"gorm.io/cli/gorm/typed"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -50,7 +50,7 @@ func TestMySQL_JSONEqual_ProfileVIP(t *testing.T) {
 	}
 
 	// Query using dialect-aware Equal on JSON path
-	got, err := generics.G[models.User](db).
+	got, err := typed.G[models.User](db).
 		Where(generated.User.Profile.Equal("$.vip", true)).
 		Take(context.Background())
 	if err != nil {

@@ -10,8 +10,8 @@ import (
     "gorm.io/gorm"
     "gorm.io/gorm/clause"
     "gorm.io/cli/gorm/field"
-    {{- if .UseGenerics }}
-    "gorm.io/cli/gorm/generics"
+    {{- if .UsedTypedAPI }}
+    "gorm.io/cli/gorm/typed"
     {{- end }}
     {{range .Imports -}}
     {{.ImportPath}}
@@ -22,19 +22,19 @@ import (
 {{$IfaceName := .IfaceName}}
 func {{.Name}}[T any](db *gorm.DB, opts ...clause.Expression) {{$IfaceName}}Interface[T] {
     return {{$IfaceName}}Impl[T]{
-        Interface: {{if $.UseGenerics}}generics{{else}}gorm{{end}}.G[T](db, opts...),
+        Interface: {{if $.UsedTypedAPI}}typed{{else}}gorm{{end}}.G[T](db, opts...),
     }
 }
 
 type {{$IfaceName}}Interface[T any] interface {
-    {{if $.UseGenerics}}generics{{else}}gorm{{end}}.Interface[T]
+    {{if $.UsedTypedAPI}}typed{{else}}gorm{{end}}.Interface[T]
     {{range .Methods -}}
     {{.Name}}({{.ParamsString}}) ({{.ResultString}})
     {{end}}
 }
 
 type {{$IfaceName}}Impl[T any] struct {
-    {{if $.UseGenerics}}generics{{else}}gorm{{end}}.Interface[T]
+    {{if $.UsedTypedAPI}}typed{{else}}gorm{{end}}.Interface[T]
 }
 
 {{range .Methods}}
