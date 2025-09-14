@@ -9,16 +9,17 @@ import (
 var defaultOutPath = "./g"
 
 func New() *cobra.Command {
-	var output string
-	var input string
+	var strict bool
+	var input, output string
 
 	cmd := &cobra.Command{
 		Use:   "gen",
 		Short: "Generate GORM query code from raw SQL interfaces",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g := Generator{
-				Files:   map[string]*File{},
-				outPath: output,
+				StrictTyped: strict,
+				Files:       map[string]*File{},
+				outPath:     output,
 			}
 
 			err := g.Process(input)
@@ -35,6 +36,7 @@ func New() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().BoolVarP(&strict, "strict", "s", false, "Directory to place generated code")
 	cmd.Flags().StringVarP(&output, "output", "o", defaultOutPath, "Directory to place generated code")
 	cmd.Flags().StringVarP(&input, "input", "i", "", "Path to Go interface file with raw SQL annotations")
 	cmd.MarkFlagRequired("input")

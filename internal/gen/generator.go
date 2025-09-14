@@ -23,8 +23,9 @@ import (
 
 type (
 	Generator struct {
-		Files   map[string]*File
-		outPath string
+		StrictTyped bool
+		Files       map[string]*File
+		outPath     string
 	}
 	File struct {
 		Package           string
@@ -36,6 +37,7 @@ type (
 		applicableConfigs []*genconfig.Config
 		inputPath         string
 		relPath           string
+		Generator         *Generator
 	}
 	Import struct {
 		Name string
@@ -123,7 +125,8 @@ func (g *Generator) Gen() error {
 					outPath = g.Files[filesWithCfg[i]].Config.OutPath
 				}
 
-				file.applicableConfigs = append(file.applicableConfigs, g.Files[filesWithCfg[i]].Config)
+				cfg := g.Files[filesWithCfg[i]].Config
+				file.applicableConfigs = append(file.applicableConfigs, cfg)
 				mergeImports(&file.Imports, g.Files[filesWithCfg[i]].Imports)
 			}
 		}
@@ -240,6 +243,7 @@ func (g *Generator) processFile(inputFile, inputRoot string) error {
 		Package:   f.Name.Name,
 		inputPath: inputFile,
 		relPath:   relPath,
+		Generator: g,
 	}
 
 	// Add current package to imports for alias/path resolution and generation needs
@@ -507,6 +511,10 @@ func (p *File) tryParseConfig(vs *ast.ValueSpec) *genconfig.Config {
 	return nil
 }
 
+func (p File) UseGenerics() bool {
+	return p.Generator.StrictTyped
+}
+
 // parseConfigLiteral parses a cmd.Config composite literal into a Config value.
 func (p *File) parseConfigLiteral(cl *ast.CompositeLit) *genconfig.Config {
 	cfg := &genconfig.Config{
@@ -515,7 +523,7 @@ func (p *File) parseConfigLiteral(cl *ast.CompositeLit) *genconfig.Config {
 	}
 
 	// Helper to collect filter values from a composite literal list (e.g., []any{...})
-	collect := func(val ast.Expr, allowStructLiteral bool) (results []any) {
+	collect := func(val ast.Expr) (results []any) {
 		if m, ok := val.(*ast.CompositeLit); ok {
 			for _, el := range m.Elts {
 				if s := strLit(el); s != "" {
@@ -558,13 +566,13 @@ func (p *File) parseConfigLiteral(cl *ast.CompositeLit) *genconfig.Config {
 				}
 			}
 		case "IncludeInterfaces":
-			cfg.IncludeInterfaces = append(cfg.IncludeInterfaces, collect(kv.Value, false)...)
+			cfg.IncludeInterfaces = append(cfg.IncludeInterfaces, collect(kv.Value)...)
 		case "ExcludeInterfaces":
-			cfg.ExcludeInterfaces = append(cfg.ExcludeInterfaces, collect(kv.Value, false)...)
+			cfg.ExcludeInterfaces = append(cfg.ExcludeInterfaces, collect(kv.Value)...)
 		case "IncludeStructs":
-			cfg.IncludeStructs = append(cfg.IncludeStructs, collect(kv.Value, true)...)
+			cfg.IncludeStructs = append(cfg.IncludeStructs, collect(kv.Value)...)
 		case "ExcludeStructs":
-			cfg.ExcludeStructs = append(cfg.ExcludeStructs, collect(kv.Value, true)...)
+			cfg.ExcludeStructs = append(cfg.ExcludeStructs, collect(kv.Value)...)
 		}
 	}
 	return cfg
