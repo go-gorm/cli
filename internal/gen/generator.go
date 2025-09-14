@@ -344,22 +344,21 @@ return result, err`, sqlSnippet, m.Result[0].GoFullType())
 
 // chainMethodBody generates method body for chaining SQL operations that return interface
 func (m Method) chainMethodBody() string {
-	var callMethod, sql string
-	if m.SQL.Select != "" {
-		callMethod = "Select"
-		sql = m.SQL.Select
-	} else {
-		callMethod = "Where"
-		sql = m.SQL.Where
+	switch {
+	case m.SQL.Select != "":
+		return fmt.Sprintf(`%s
+
+e.Select(sb.String(), params...)
+
+return e`, m.processSQL(m.SQL.Select))
+	case m.SQL.Where != "":
+		return fmt.Sprintf(`%s
+
+e.Where(clause.Expr{SQL: sb.String(), Vars: params})
+
+return e`, m.processSQL(m.SQL.Where))
 	}
-
-	sqlSnippet := m.processSQL(sql)
-
-	return fmt.Sprintf(`%s
-
-e.%s(sb.String(), params...)
-
-return e`, sqlSnippet, callMethod)
+	return ""
 }
 
 // parseFieldList converts AST field list to parameter slice for method signatures

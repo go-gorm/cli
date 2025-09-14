@@ -145,7 +145,7 @@ func (e _QueryImpl[T]) FilterByNameAndAge(ctx context.Context, name string, age 
 	sb.WriteString("name=? AND age=?")
 	params = append(params, name, age)
 
-	e.Where(sb.String(), params...)
+	e.Where(clause.Expr{SQL: sb.String(), Vars: params})
 
 	return e
 }
