@@ -1,6 +1,8 @@
 package field
 
-import "gorm.io/gorm/clause"
+import (
+	"gorm.io/gorm/clause"
+)
 
 type (
 	// QueryInterface defines the interface for building conditions
@@ -37,3 +39,30 @@ type (
 		buildSelectArg() any
 	}
 )
+
+func BuildSelectExpr(ss ...Selectable) clause.Expression {
+	if len(ss) == 0 {
+		return nil
+	}
+	exprs := make([]clause.Expression, 0, len(ss))
+	for _, s := range ss {
+		arg := s.buildSelectArg()
+		switch v := arg.(type) {
+		case clause.Expression:
+			exprs = append(exprs, v)
+		case clause.Column:
+			// clause.Column does not implement clause.Expression in gorm v1.31.0,
+			// wrap it with an Expr so it can be used as an expression.
+			exprs = append(exprs, clause.Expr{SQL: "?", Vars: []any{v}})
+		case string:
+			// Wrap column name as an Expr with a Column so it builds quoted properly.
+			exprs = append(exprs, clause.Expr{SQL: "?", Vars: []any{clause.Column{Name: v}}})
+		default:
+			exprs = append(exprs, clause.Expr{SQL: "?", Vars: []any{arg}})
+		}
+	}
+	if len(exprs) == 1 {
+		return exprs[0]
+	}
+	return clause.CommaExpression{Exprs: exprs}
+}

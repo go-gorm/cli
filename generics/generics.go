@@ -2,28 +2,20 @@ package gorm
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"reflect"
-	"sort"
-	"strings"
 
 	"gorm.io/cli/gorm/field"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
 )
 
 type Interface[T any] interface {
-	Raw(sql string, values ...interface{}) gorm.ExecInterface[T]
+	Raw(sql string, values ...any) gorm.ExecInterface[T]
 	Exec(ctx context.Context, sql string, values ...interface{}) error
 	CreateInterface[T]
 }
 
 type CreateInterface[T any] interface {
 	gorm.ExecInterface[T]
-	// chain methods available at start; return ChainInterface
 	Scopes(scopes ...func(db *gorm.Statement)) ChainInterface[T]
 	Where(...field.QueryInterface) ChainInterface[T]
 	Not(...field.QueryInterface) ChainInterface[T]
@@ -36,7 +28,7 @@ type CreateInterface[T any] interface {
 	Omit(...field.ColumnInterface) ChainInterface[T]
 	MapColumns(m map[string]string) ChainInterface[T]
 	Distinct(...field.ColumnInterface) ChainInterface[T]
-	Group(field.Selectable) ChainInterface[T]
+	Group(sel field.ColumnInterface) ChainInterface[T]
 	Having(...field.QueryInterface) ChainInterface[T]
 	Order(field.OrderableInterface) ChainInterface[T]
 
@@ -54,7 +46,7 @@ type CreateInterface[T any] interface {
 }
 
 type ChainInterface[T any] interface {
-	gorm.ExecInterface[T]
+	ChainExecInterface[T]
 	Scopes(scopes ...func(db *gorm.Statement)) ChainInterface[T]
 	Where(...field.QueryInterface) ChainInterface[T]
 	Not(...field.QueryInterface) ChainInterface[T]
@@ -67,22 +59,28 @@ type ChainInterface[T any] interface {
 	Omit(...field.ColumnInterface) ChainInterface[T]
 	MapColumns(m map[string]string) ChainInterface[T]
 	Distinct(...field.ColumnInterface) ChainInterface[T]
-	Group(field.Selectable) ChainInterface[T]
+	Group(field.ColumnInterface) ChainInterface[T]
 	Having(...field.QueryInterface) ChainInterface[T]
 	Order(field.OrderableInterface) ChainInterface[T]
 
 	Table(name string, args ...interface{}) ChainInterface[T]
+	Build(builder clause.Builder)
+}
+
+type ChainExecInterface[T any] interface {
+	gorm.ExecInterface[T]
+
 	Delete(ctx context.Context) (rowsAffected int, err error)
 	Update(ctx context.Context, name string, value any) (rowsAffected int, err error)
 	Updates(ctx context.Context, t T) (rowsAffected int, err error)
 	Count(ctx context.Context, column string) (result int64, err error)
 
 	Set(assignments ...clause.Assigner) gorm.SetUpdateOnlyInterface[T]
-	Build(builder clause.Builder)
 }
 
+// Builder adapters used in callbacks
 type JoinBuilder interface {
-	Select(...field.Selectable) JoinBuilder
+	Select(...field.ColumnInterface) JoinBuilder
 	Omit(...field.ColumnInterface) JoinBuilder
 	Where(...field.QueryInterface) JoinBuilder
 	Not(...field.QueryInterface) JoinBuilder
@@ -90,7 +88,7 @@ type JoinBuilder interface {
 }
 
 type PreloadBuilder interface {
-	Select(...field.Selectable) PreloadBuilder
+	Select(...field.ColumnInterface) PreloadBuilder
 	Omit(...field.ColumnInterface) PreloadBuilder
 	Where(...field.QueryInterface) PreloadBuilder
 	Not(...field.QueryInterface) PreloadBuilder
@@ -102,666 +100,243 @@ type PreloadBuilder interface {
 }
 
 type g[T any] struct {
+	g gorm.Interface[T]
 	createG[T]
 }
 
 type createG[T any] struct {
+	g gorm.CreateInterface[T]
 	chainG[T]
 }
 
 type chainG[T any] struct {
-	gorm.Interface[T]
+	g gorm.ChainInterface[T]
+	ChainExecInterface[T]
 }
 
 func G[T any](db *gorm.DB, opts ...clause.Expression) Interface[T] {
-	return g[T]{
+	v := gorm.G[T](db, opts...)
+	return &g[T]{
+		g: v,
 		createG: createG[T]{
+			g: v,
 			chainG: chainG[T]{
-				Interface: g.G[T](db, opts...),
+				g:                  v.Scopes(),
+				ChainExecInterface: v.Scopes(),
 			},
 		},
 	}
 }
 
+func (v g[T]) Raw(sql string, values ...interface{}) gorm.ExecInterface[T] {
+	return v.g.Raw(sql, values...)
+}
+
+func (v g[T]) Exec(ctx context.Context, sql string, values ...interface{}) error {
+	return v.g.Exec(ctx, sql, values...)
+}
+
 func (c createG[T]) Table(name string, args ...interface{}) CreateInterface[T] {
-	return createG[T]{c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Table(name, args...)
-	})}
+	v := c.g.Table(name, args...)
+	return createG[T]{
+		g: v,
+		chainG: chainG[T]{
+			g:                  v.Scopes(),
+			ChainExecInterface: v.Scopes(),
+		},
+	}
 }
 
 func (c createG[T]) Set(assignments ...clause.Assigner) gorm.SetCreateOrUpdateInterface[T] {
-	return c.processSet(assignments...)
+	return c.g.Set(assignments...)
 }
 
 func (c createG[T]) Create(ctx context.Context, r *T) error {
-	return c.g.apply(ctx).Create(r).Error
+	return c.g.Create(ctx, r)
 }
 
 func (c createG[T]) CreateInBatches(ctx context.Context, r *[]T, batchSize int) error {
-	return c.g.apply(ctx).CreateInBatches(r, batchSize).Error
+	return c.g.CreateInBatches(ctx, r, batchSize)
 }
 
-func (c chainG[T]) getInstance() *gorm.DB {
-	var r T
-	return c.g.apply(context.Background()).Model(r).getInstance()
-}
-
-func (c chainG[T]) with(v op) chainG[T] {
+func (c chainG[T]) with(v gorm.ChainInterface[T]) chainG[T] {
 	return chainG[T]{
-		execG: execG[T]{g: &g[T]{
-			db:  c.g.db,
-			ops: append(append([]op(nil), c.g.ops...), v),
-		}},
+		g:                  v,
+		ChainExecInterface: v,
 	}
 }
 
 func (c chainG[T]) Table(name string, args ...interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Table(name, args...)
-	})
+	return c.with(c.g.Table(name, args...))
 }
 
-func (c chainG[T]) Scopes(scopes ...func(db *Statement)) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		for _, fc := range scopes {
-			fc(db.Statement)
-		}
-		return db
-	})
+func (c chainG[T]) Scopes(scopes ...func(db *gorm.Statement)) ChainInterface[T] {
+	return c.with(c.g.Scopes(scopes...))
 }
 
-func (c chainG[T]) Where(query interface{}, args ...interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Where(query, args...)
-	})
+func (c chainG[T]) Where(exprs ...field.QueryInterface) ChainInterface[T] {
+	return c.with(c.g.Where(exprs))
 }
 
-func (c chainG[T]) Not(query interface{}, args ...interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Not(query, args...)
-	})
+func (c chainG[T]) Not(exprs ...field.QueryInterface) ChainInterface[T] {
+	return c.with(c.g.Not(exprs))
 }
 
-func (c chainG[T]) Or(query interface{}, args ...interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Or(query, args...)
-	})
+func (c chainG[T]) Or(exprs ...field.QueryInterface) ChainInterface[T] {
+	return c.with(c.g.Or(exprs))
 }
 
-func (c chainG[T]) Limit(offset int) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Limit(offset)
-	})
+func (c chainG[T]) Limit(limit int) ChainInterface[T] {
+	return c.with(c.g.Limit(limit))
 }
 
 func (c chainG[T]) Offset(offset int) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Offset(offset)
-	})
+	return c.with(c.g.Offset(offset))
 }
 
+// JoinBuilder adapter that collects conditions/selects/omits on a *gorm.DB
 type joinBuilder struct {
-	db *DB
+	db gorm.JoinBuilder
 }
 
-func (q *joinBuilder) Where(query interface{}, args ...interface{}) JoinBuilder {
-	q.db.Where(query, args...)
+func (q *joinBuilder) Where(exprs ...field.QueryInterface) JoinBuilder {
+	q.db = q.db.Where(exprs)
 	return q
 }
 
-func (q *joinBuilder) Or(query interface{}, args ...interface{}) JoinBuilder {
-	q.db.Where(query, args...)
+func (q *joinBuilder) Or(exprs ...field.QueryInterface) JoinBuilder {
+	q.db = q.db.Or(exprs)
 	return q
 }
 
-func (q *joinBuilder) Not(query interface{}, args ...interface{}) JoinBuilder {
-	q.db.Where(query, args...)
+func (q *joinBuilder) Not(exprs ...field.QueryInterface) JoinBuilder {
+	q.db = q.db.Not(exprs)
 	return q
 }
 
-func (q *joinBuilder) Select(columns ...string) JoinBuilder {
-	q.db.Select(columns)
+func (q *joinBuilder) Select(cols ...field.ColumnInterface) JoinBuilder {
+	q.db = q.db.Select(columnsToNames(cols...)...)
 	return q
 }
 
-func (q *joinBuilder) Omit(columns ...string) JoinBuilder {
-	q.db.Omit(columns...)
+func (q *joinBuilder) Omit(cols ...field.ColumnInterface) JoinBuilder {
+	q.db = q.db.Omit(columnsToNames(cols...)...)
 	return q
 }
 
 type preloadBuilder struct {
-	limitPerRecord int
-	db             *DB
+	db gorm.PreloadBuilder
 }
 
-func (q *preloadBuilder) Where(query interface{}, args ...interface{}) PreloadBuilder {
-	q.db.Where(query, args...)
+func (q *preloadBuilder) Where(exprs ...field.QueryInterface) PreloadBuilder {
+	q.db = q.db.Where(exprs)
 	return q
 }
 
-func (q *preloadBuilder) Or(query interface{}, args ...interface{}) PreloadBuilder {
-	q.db.Where(query, args...)
+func (q *preloadBuilder) Or(exprs ...field.QueryInterface) PreloadBuilder {
+	q.db = q.db.Or(exprs)
 	return q
 }
 
-func (q *preloadBuilder) Not(query interface{}, args ...interface{}) PreloadBuilder {
-	q.db.Where(query, args...)
+func (q *preloadBuilder) Not(exprs ...field.QueryInterface) PreloadBuilder {
+	q.db = q.db.Not(exprs)
 	return q
 }
 
-func (q *preloadBuilder) Select(columns ...string) PreloadBuilder {
-	q.db.Select(columns)
+func (q *preloadBuilder) Select(cols ...field.ColumnInterface) PreloadBuilder {
+	q.db = q.db.Select(columnsToNames(cols...)...)
 	return q
 }
 
-func (q *preloadBuilder) Omit(columns ...string) PreloadBuilder {
-	q.db.Omit(columns...)
+func (q *preloadBuilder) Omit(cols ...field.ColumnInterface) PreloadBuilder {
+	q.db = q.db.Omit(columnsToNames(cols...)...)
 	return q
 }
 
 func (q *preloadBuilder) Limit(limit int) PreloadBuilder {
-	q.db.Limit(limit)
+	q.db = q.db.Limit(limit)
 	return q
 }
 
 func (q *preloadBuilder) Offset(offset int) PreloadBuilder {
-	q.db.Offset(offset)
+	q.db = q.db.Offset(offset)
 	return q
 }
 
-func (q *preloadBuilder) Order(value interface{}) PreloadBuilder {
-	q.db.Order(value)
+func (q *preloadBuilder) Order(o field.OrderableInterface) PreloadBuilder {
+	q.db = q.db.Order(o)
 	return q
 }
 
 func (q *preloadBuilder) LimitPerRecord(num int) PreloadBuilder {
-	q.limitPerRecord = num
+	q.db = q.db.LimitPerRecord(num)
 	return q
 }
 
 func (c chainG[T]) Joins(jt clause.JoinTarget, on func(db JoinBuilder, joinTable clause.Table, curTable clause.Table) error) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		if jt.Table == "" {
-			jt.Table = clause.JoinTable(strings.Split(jt.Association, ".")...).Name
-		}
-
-		q := joinBuilder{db: db.Session(&Session{NewDB: true, Initialized: true}).Table(jt.Table)}
-		if on != nil {
-			if err := on(&q, clause.Table{Name: jt.Table}, clause.Table{Name: clause.CurrentTable}); err != nil {
-				db.AddError(err)
-			}
-		}
-
-		j := join{
-			Name:     jt.Association,
-			Alias:    jt.Table,
-			Selects:  q.db.Statement.Selects,
-			Omits:    q.db.Statement.Omits,
-			JoinType: jt.Type,
-		}
-
-		if where, ok := q.db.Statement.Clauses["WHERE"].Expression.(clause.Where); ok {
-			j.On = &where
-		}
-
-		if jt.Subquery != nil {
-			joinType := j.JoinType
-			if joinType == "" {
-				joinType = clause.LeftJoin
-			}
-
-			if db, ok := jt.Subquery.(interface{ getInstance() *gorm.DB }); ok {
-				stmt := db.getInstance().Statement
-				if len(j.Selects) == 0 {
-					j.Selects = stmt.Selects
-				}
-				if len(j.Omits) == 0 {
-					j.Omits = stmt.Omits
-				}
-			}
-
-			expr := clause.NamedExpr{SQL: fmt.Sprintf("%s JOIN (?) AS ?", joinType), Vars: []interface{}{jt.Subquery, clause.Table{Name: j.Alias}}}
-
-			if j.On != nil {
-				expr.SQL += " ON ?"
-				expr.Vars = append(expr.Vars, clause.AndConditions{Exprs: j.On.Exprs})
-			}
-
-			j.Expression = expr
-		}
-
-		db.Statement.Joins = append(db.Statement.Joins, j)
-		sort.Slice(db.Statement.Joins, func(i, j int) bool {
-			return db.Statement.Joins[i].Name < db.Statement.Joins[j].Name
-		})
-		return db
-	})
+	return c.with(c.g.Joins(jt, func(db gorm.JoinBuilder, joinTable clause.Table, curTable clause.Table) error {
+		on(&joinBuilder{db}, joinTable, curTable)
+		return nil
+	}))
 }
 
-func (c chainG[T]) Select(query string, args ...interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Select(query, args...)
-	})
+func (c chainG[T]) Select(ss ...field.Selectable) ChainInterface[T] {
+	args := field.BuildSelectExpr(ss...)
+	return c.with(c.g.Select("?", args))
 }
 
-func (c chainG[T]) Omit(columns ...string) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Omit(columns...)
-	})
+func (c chainG[T]) Omit(cols ...field.ColumnInterface) ChainInterface[T] {
+	names := columnsToNames(cols...)
+	return c.with(c.g.Omit(names...))
 }
 
 func (c chainG[T]) MapColumns(m map[string]string) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.MapColumns(m)
-	})
+	return c.with(c.g.MapColumns(m))
 }
 
 func (c chainG[T]) Set(assignments ...clause.Assigner) gorm.SetUpdateOnlyInterface[T] {
-	return c.processSet(assignments...)
+	return c.g.Set(assignments...)
 }
 
-func (c chainG[T]) Distinct(...field.ColumnInterface) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Distinct(args...)
-	})
+func (c chainG[T]) Distinct(cols ...field.ColumnInterface) ChainInterface[T] {
+	args := make([]interface{}, 0, len(cols))
+	for _, col := range columnsToNames(cols...) {
+		args = append(args, col)
+	}
+	return c.with(c.g.Distinct(args...))
 }
 
-func (c chainG[T]) Group(name string) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Group(name)
-	})
+func (c chainG[T]) Group(sel field.ColumnInterface) ChainInterface[T] {
+	return c.with(c.g.Group(sel.Column().Name))
 }
 
-func (c chainG[T]) Having(query interface{}, args ...interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Having(query, args...)
-	})
+func (c chainG[T]) Having(exprs ...field.QueryInterface) ChainInterface[T] {
+	return c.with(c.g.Having(exprs))
 }
 
-func (c chainG[T]) Order(value interface{}) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Order(value)
-	})
+func (c chainG[T]) Order(o field.OrderableInterface) ChainInterface[T] {
+	return c.with(c.g.Order(o))
 }
 
-func (c chainG[T]) Preload(association string, query func(db PreloadBuilder) error) ChainInterface[T] {
-	return c.with(func(db *gorm.DB) *gorm.DB {
-		return db.Preload(association, func(tx *gorm.DB) *gorm.DB {
-			q := preloadBuilder{db: tx.getInstance()}
-			if query != nil {
-				if err := query(&q); err != nil {
-					db.AddError(err)
-				}
-			}
-
-			relation, ok := db.Statement.Schema.Relationships.Relations[association]
-			if !ok {
-				if preloadFields := strings.Split(association, "."); len(preloadFields) > 1 {
-					relationships := &db.Statement.Schema.Relationships
-					for _, field := range preloadFields {
-						var ok bool
-						relation, ok = relationships.Relations[field]
-						if ok {
-							relationships = &relation.FieldSchema.Relationships
-						} else {
-							db.AddError(fmt.Errorf("relation %s not found", association))
-							return nil
-						}
-					}
-				} else {
-					db.AddError(fmt.Errorf("relation %s not found", association))
-					return nil
-				}
-			}
-
-			if q.limitPerRecord > 0 {
-				if relation.JoinTable != nil {
-					tx.AddError(fmt.Errorf("many2many relation %s don't support LimitPerRecord", association))
-					return tx
-				}
-
-				refColumns := []clause.Column{}
-				for _, rel := range relation.References {
-					if rel.OwnPrimaryKey {
-						refColumns = append(refColumns, clause.Column{Name: rel.ForeignKey.DBName})
-					}
-				}
-
-				if len(refColumns) != 0 {
-					selectExpr := clause.CommaExpression{}
-					for _, column := range q.db.Statement.Selects {
-						selectExpr.Exprs = append(selectExpr.Exprs, clause.Expr{SQL: "?", Vars: []interface{}{clause.Column{Name: column}}})
-					}
-
-					if len(selectExpr.Exprs) == 0 {
-						selectExpr.Exprs = []clause.Expression{clause.Expr{SQL: "*", Vars: []interface{}{}}}
-					}
-
-					partitionBy := clause.CommaExpression{}
-					for _, column := range refColumns {
-						partitionBy.Exprs = append(partitionBy.Exprs, clause.Expr{SQL: "?", Vars: []interface{}{clause.Column{Name: column.Name}}})
-					}
-
-					rnnColumn := clause.Column{Name: "gorm_preload_rnn"}
-					sql := "ROW_NUMBER() OVER (PARTITION BY ? ?)"
-					vars := []interface{}{partitionBy}
-					if orderBy, ok := q.db.Statement.Clauses["ORDER BY"]; ok {
-						vars = append(vars, orderBy)
-					} else {
-						vars = append(vars, clause.Clause{Name: "ORDER BY", Expression: clause.OrderBy{
-							Columns: []clause.OrderByColumn{{Column: clause.PrimaryColumn, Desc: true}},
-						}})
-					}
-					vars = append(vars, rnnColumn)
-
-					selectExpr.Exprs = append(selectExpr.Exprs, clause.Expr{SQL: sql + " AS ?", Vars: vars})
-
-					q.db.Clauses(clause.Select{Expression: selectExpr})
-
-					return q.db.Session(&Session{NewDB: true}).Unscoped().Table("(?) t", q.db).Where("? <= ?", rnnColumn, q.limitPerRecord)
-				}
-			}
-
-			return q.db
-		})
-	})
-}
-
-func (c chainG[T]) Delete(ctx context.Context) (rowsAffected int, err error) {
-	r := new(T)
-	res := c.g.apply(ctx).Delete(r)
-	return int(res.RowsAffected), res.Error
-}
-
-func (c chainG[T]) Update(ctx context.Context, name string, value any) (rowsAffected int, err error) {
-	var r T
-	res := c.g.apply(ctx).Model(r).Update(name, value)
-	return int(res.RowsAffected), res.Error
-}
-
-func (c chainG[T]) Updates(ctx context.Context, t T) (rowsAffected int, err error) {
-	res := c.g.apply(ctx).Updates(t)
-	return int(res.RowsAffected), res.Error
-}
-
-func (c chainG[T]) Count(ctx context.Context, column string) (result int64, err error) {
-	var r T
-	err = c.g.apply(ctx).Model(r).Select(column).Count(&result).Error
-	return
+func (c chainG[T]) Preload(assoc field.AssociationInterface, query func(db PreloadBuilder) error) ChainInterface[T] {
+	return c.with(c.g.Preload(assoc.Name(), func(db gorm.PreloadBuilder) error {
+		return query(&preloadBuilder{db: db})
+	}))
 }
 
 func (c chainG[T]) Build(builder clause.Builder) {
-	subdb := c.getInstance()
-	subdb.Logger = logger.Discard
-	subdb.DryRun = true
+	c.g.Build(builder)
+}
 
-	if stmt, ok := builder.(*Statement); ok {
-		if subdb.Statement.SQL.Len() > 0 {
-			var (
-				vars = subdb.Statement.Vars
-				sql  = subdb.Statement.SQL.String()
-			)
-
-			subdb.Statement.Vars = make([]interface{}, 0, len(vars))
-			for _, vv := range vars {
-				subdb.Statement.Vars = append(subdb.Statement.Vars, vv)
-				bindvar := strings.Builder{}
-				subdb.BindVarTo(&bindvar, subdb.Statement, vv)
-				sql = strings.Replace(sql, bindvar.String(), "?", 1)
-			}
-
-			subdb.Statement.SQL.Reset()
-			subdb.Statement.Vars = stmt.Vars
-			if strings.Contains(sql, "@") {
-				clause.NamedExpr{SQL: sql, Vars: vars}.Build(subdb.Statement)
-			} else {
-				clause.Expr{SQL: sql, Vars: vars}.Build(subdb.Statement)
-			}
+func columnsToNames(cols ...field.ColumnInterface) []string {
+	out := make([]string, 0, len(cols))
+	for _, c := range cols {
+		col := c.Column()
+		if col.Table != "" {
+			out = append(out, col.Table+"."+col.Name)
 		} else {
-			subdb.Statement.Vars = append(stmt.Vars, subdb.Statement.Vars...)
-			subdb.callbacks.Query().Execute(subdb)
-		}
-
-		builder.WriteString(subdb.Statement.SQL.String())
-		stmt.Vars = subdb.Statement.Vars
-	}
-}
-
-func (c chainG[T]) processSet(items ...clause.Assigner) setCreateOrUpdateG[T] {
-	var (
-		assigns  []clause.Assignment
-		assocOps []clause.Association
-	)
-
-	for _, item := range items {
-		// Check if it's an AssociationAssigner
-		if assocAssigner, ok := item.(clause.AssociationAssigner); ok {
-			assocOps = append(assocOps, assocAssigner.AssociationAssignments()...)
-		} else {
-			assigns = append(assigns, item.Assignments()...)
+			out = append(out, col.Name)
 		}
 	}
-
-	return setCreateOrUpdateG[T]{
-		c:        c,
-		assigns:  assigns,
-		assocOps: assocOps,
-	}
-}
-
-// setCreateOrUpdateG[T] is a struct that holds operations to be executed in a batch.
-// It supports regular assignments and association operations.
-type setCreateOrUpdateG[T any] struct {
-	c        chainG[T]
-	assigns  []clause.Assignment
-	assocOps []clause.Association
-}
-
-func (s setCreateOrUpdateG[T]) Update(ctx context.Context) (rowsAffected int, err error) {
-	// Execute association operations
-	for _, assocOp := range s.assocOps {
-		if err := s.executeAssociationOperation(ctx, assocOp); err != nil {
-			return 0, err
-		}
-	}
-
-	// Execute assignment operations
-	if len(s.assigns) > 0 {
-		var r T
-		res := s.c.g.apply(ctx).Model(r).Clauses(clause.Set(s.assigns)).Updates(map[string]interface{}{})
-		return int(res.RowsAffected), res.Error
-	}
-
-	return 0, nil
-}
-
-func (s setCreateOrUpdateG[T]) Create(ctx context.Context) error {
-	// Execute association operations
-	for _, assocOp := range s.assocOps {
-		if err := s.executeAssociationOperation(ctx, assocOp); err != nil {
-			return err
-		}
-	}
-
-	// Execute assignment operations
-	if len(s.assigns) > 0 {
-		data := make(map[string]interface{}, len(s.assigns))
-		for _, a := range s.assigns {
-			data[a.Column.Name] = a.Value
-		}
-		var r T
-		return s.c.g.apply(ctx).Model(r).Create(data).Error
-	}
-
-	return nil
-}
-
-// executeAssociationOperation executes an association operation
-func (s setCreateOrUpdateG[T]) executeAssociationOperation(ctx context.Context, op clause.Association) error {
-	var r T
-	base := s.c.g.apply(ctx).Model(r)
-
-	switch op.Type {
-	case clause.OpCreate:
-		return s.handleAssociationCreate(ctx, base, op)
-	case clause.OpUnlink, clause.OpDelete, clause.OpUpdate:
-		return s.handleAssociation(ctx, base, op)
-	default:
-		return fmt.Errorf("unknown association operation type: %v", op.Type)
-	}
-}
-
-func (s setCreateOrUpdateG[T]) handleAssociationCreate(ctx context.Context, base *DB, op clause.Association) error {
-	if len(op.Set) > 0 {
-		return s.handleAssociationForOwners(base, ctx, func(owner T, assoc *Association) error {
-			data := make(map[string]interface{}, len(op.Set))
-			for _, a := range op.Set {
-				data[a.Column.Name] = a.Value
-			}
-			return assoc.Append(data)
-		}, op.Association)
-	}
-
-	return s.handleAssociationForOwners(base, ctx, func(owner T, assoc *Association) error {
-		return assoc.Append(op.Values...)
-	}, op.Association)
-}
-
-// handleAssociationForOwners is a helper function that handles associations for all owners
-func (s setCreateOrUpdateG[T]) handleAssociationForOwners(base *DB, ctx context.Context, handler func(owner T, association *Association) error, associationName string) error {
-	var owners []T
-	if err := base.Find(&owners).Error; err != nil {
-		return err
-	}
-
-	for _, owner := range owners {
-		assoc := base.Session(&Session{NewDB: true, Context: ctx}).Model(&owner).Association(associationName)
-		if assoc.Error != nil {
-			return assoc.Error
-		}
-
-		if err := handler(owner, assoc); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s setCreateOrUpdateG[T]) handleAssociation(ctx context.Context, base *DB, op clause.Association) error {
-	assoc := base.Association(op.Association)
-	if assoc.Error != nil {
-		return assoc.Error
-	}
-
-	var (
-		rel            = assoc.Relationship
-		assocModel     = reflect.New(rel.FieldSchema.ModelType).Interface()
-		fkNil          = map[string]any{}
-		setMap         = make(map[string]any, len(op.Set))
-		ownerPKNames   []string
-		ownerFKNames   []string
-		primaryColumns []any
-		foreignColumns []any
-	)
-
-	for _, a := range op.Set {
-		setMap[a.Column.Name] = a.Value
-	}
-
-	for _, ref := range rel.References {
-		fkNil[ref.ForeignKey.DBName] = nil
-
-		if ref.OwnPrimaryKey && ref.PrimaryKey != nil {
-			ownerPKNames = append(ownerPKNames, ref.PrimaryKey.DBName)
-			primaryColumns = append(primaryColumns, clause.Column{Name: ref.PrimaryKey.DBName})
-			foreignColumns = append(foreignColumns, clause.Column{Name: ref.ForeignKey.DBName})
-		} else if !ref.OwnPrimaryKey && ref.PrimaryKey != nil {
-			ownerFKNames = append(ownerFKNames, ref.ForeignKey.DBName)
-			primaryColumns = append(primaryColumns, clause.Column{Name: ref.PrimaryKey.DBName})
-		}
-	}
-
-	assocDB := s.c.g.db.Session(&Session{NewDB: true, Context: ctx}).Model(assocModel).Where(op.Conditions)
-
-	switch rel.Type {
-	case schema.HasOne, schema.HasMany:
-		assocDB = assocDB.Where("? IN (?)", foreignColumns, base.Select(ownerPKNames))
-		switch op.Type {
-		case clause.OpUnlink:
-			return assocDB.Updates(fkNil).Error
-		case clause.OpDelete:
-			return assocDB.Delete(assocModel).Error
-		case clause.OpUpdate:
-			return assocDB.Updates(setMap).Error
-		}
-	case schema.BelongsTo:
-		switch op.Type {
-		case clause.OpDelete:
-			return base.Transaction(func(tx *DB) error {
-				assocDB.Statement.ConnPool = tx.Statement.ConnPool
-				base.Statement.ConnPool = tx.Statement.ConnPool
-
-				if err := assocDB.Where("? IN (?)", primaryColumns, base.Select(ownerFKNames)).Delete(assocModel).Error; err != nil {
-					return err
-				}
-				return base.Updates(fkNil).Error
-			})
-		case clause.OpUnlink:
-			return base.Updates(fkNil).Error
-		case clause.OpUpdate:
-			return assocDB.Where("? IN (?)", primaryColumns, base.Select(ownerFKNames)).Updates(setMap).Error
-		}
-	case schema.Many2Many:
-		joinModel := reflect.New(rel.JoinTable.ModelType).Interface()
-		joinDB := base.Session(&Session{NewDB: true, Context: ctx}).Model(joinModel)
-
-		// EXISTS owners: owners.pk = join.owner_fk for all owner refs
-		ownersExists := base.Session(&Session{NewDB: true, Context: ctx}).Table(rel.Schema.Table).Select("1")
-		for _, ref := range rel.References {
-			if ref.OwnPrimaryKey && ref.PrimaryKey != nil {
-				ownersExists = ownersExists.Where(clause.Eq{
-					Column: clause.Column{Table: rel.Schema.Table, Name: ref.PrimaryKey.DBName},
-					Value:  clause.Column{Table: rel.JoinTable.Table, Name: ref.ForeignKey.DBName},
-				})
-			}
-		}
-
-		// EXISTS related: related.pk = join.rel_fk for all related refs, plus optional conditions
-		relatedExists := base.Session(&Session{NewDB: true, Context: ctx}).Table(rel.FieldSchema.Table).Select("1")
-		for _, ref := range rel.References {
-			if !ref.OwnPrimaryKey && ref.PrimaryKey != nil {
-				relatedExists = relatedExists.Where(clause.Eq{
-					Column: clause.Column{Table: rel.FieldSchema.Table, Name: ref.PrimaryKey.DBName},
-					Value:  clause.Column{Table: rel.JoinTable.Table, Name: ref.ForeignKey.DBName},
-				})
-			}
-		}
-		relatedExists = relatedExists.Where(op.Conditions)
-
-		switch op.Type {
-		case clause.OpUnlink, clause.OpDelete:
-			joinDB = joinDB.Where("EXISTS (?)", ownersExists)
-			if len(op.Conditions) > 0 {
-				joinDB = joinDB.Where("EXISTS (?)", relatedExists)
-			}
-			return joinDB.Delete(nil).Error
-		case clause.OpUpdate:
-			// Update related table rows that have join rows matching owners
-			relatedDB := base.Session(&Session{NewDB: true, Context: ctx}).Table(rel.FieldSchema.Table).Where(op.Conditions)
-
-			// correlated join subquery: join.rel_fk = related.pk AND EXISTS owners
-			joinSub := base.Session(&Session{NewDB: true, Context: ctx}).Table(rel.JoinTable.Table).Select("1")
-			for _, ref := range rel.References {
-				if !ref.OwnPrimaryKey && ref.PrimaryKey != nil {
-					joinSub = joinSub.Where(clause.Eq{
-						Column: clause.Column{Table: rel.JoinTable.Table, Name: ref.ForeignKey.DBName},
-						Value:  clause.Column{Table: rel.FieldSchema.Table, Name: ref.PrimaryKey.DBName},
-					})
-				}
-			}
-			joinSub = joinSub.Where("EXISTS (?)", ownersExists)
-			return relatedDB.Where("EXISTS (?)", joinSub).Updates(setMap).Error
-		}
-	}
-	return errors.New("unsupported relationship")
+	return out
 }
