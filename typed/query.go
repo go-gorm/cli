@@ -275,8 +275,7 @@ func (q *preloadBuilder) LimitPerRecord(num int) PreloadBuilder {
 
 func (c chainG[T]) Joins(jt clause.JoinTarget, on func(db JoinBuilder, joinTable clause.Table, curTable clause.Table) error) ChainInterface[T] {
 	return c.with(c.g.Joins(jt, func(db gorm.JoinBuilder, joinTable clause.Table, curTable clause.Table) error {
-		on(&joinBuilder{db}, joinTable, curTable)
-		return nil
+		return on(&joinBuilder{db}, joinTable, curTable)
 	}))
 }
 
