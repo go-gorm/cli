@@ -2,18 +2,19 @@
 
 GORM CLI generates two complementary pieces of code for your GORM projects:
 
-- Interface‑driven, type‑safe query APIs (from Go interfaces with SQL templates)
-- Model‑driven field helpers (from your model structs for filters, updates, and associations)
+- **Interface-driven, type-safe query APIs** (from Go interfaces with SQL templates)
+- **Model-driven field helpers** (from your model structs for filters, updates, and associations)
 
-Together they give you compile‑time safety and a fluent, discoverable API for reads and writes.
+Together they give you compile-time safety and a fluent, discoverable API for all database operations.
 
 ## 🚀 Features
 
-- Type‑safe query APIs from interfaces with SQL templates
-- Model‑driven field helpers for filters, updates, ordering, and associations
-- Association operations: Create/CreateInBatch/Update/Unlink/Delete with compile‑time safety
-- Configurable generation via `genconfig.Config` (OutPath, Include/Exclude, FileLevel, Custom field mapping)
-- Seamless integration with `gorm.io/gorm`
+- **Interface-driven Query Generation**: Type-safe query APIs generated from Go interfaces with SQL templates
+- **Model-driven Field Helpers**: Generate helper methods from model structs for filters, updates, ordering, and associations
+- **Enhanced Type Safety**: Full compile-time safety using Go generics for all generated code (with `--typed` flag)
+- **Association Operations**: Create/CreateInBatch/Update/Unlink/Delete with compile-time safety
+- **Configurable Generation**: Customize output via `genconfig.Config` (OutPath, Include/Exclude, FileLevel, Custom field mapping)
+- **Seamless GORM Integration**: Works smoothly with `gorm.io/gorm`
 
 ## 📦 Installation
 
@@ -48,7 +49,11 @@ type User struct {
 2) Generate code
 
 ```bash
+# Generate standard APIs
 gorm gen -i ./examples -o ./generated
+
+# Generate enhanced type-safe APIs
+gorm gen -i ./examples -o ./generated --typed
 ```
 
 3) Use the generated APIs
@@ -59,13 +64,20 @@ u, err := generated.Query[User](db).GetByID(ctx, 123)
 
 // SELECT * FROM users WHERE `age` > 18
 users, err := gorm.G[User](db).Where(generated.User.Age.Gt(18)).Find(ctx)
+
+// SELECT * FROM users WHERE `age` > 18
+u, err := generated.Query[User](db).Where(generated.User.Age.Gt(18)).Find(ctx)
+
+// Only with standard APIs (not --typed) can you mix string conditions with typed options
+// SELECT * FROM users WHERE name = "jinzhu" AND `age` > 18
+u, err := generated.Query[User](db).Where("name = ?", "jinzhu").Where(generated.User.Age.Gt(18)).Find(ctx)
 ```
 
 
 ## 🔎 Two Generators, One Workflow
 
-- Query API from interfaces: write methods with SQL templates in comments; get concrete, type‑safe methods
-- Field helpers from models: generate strongly typed helpers for basic fields and associations
+1. **Query API Generation**: Write methods with SQL templates in Go interface comments to generate concrete, type-safe methods
+2. **Field Helper Generation**: Generate strongly typed helpers for basic fields and associations from your model structs
 
 ### Field Helper Generation Rules:
 
