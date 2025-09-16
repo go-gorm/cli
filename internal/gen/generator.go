@@ -335,12 +335,12 @@ func (m Method) finishMethodBody() string {
 
 	if len(m.Result) == 1 {
 		return fmt.Sprintf(`%s
-return e.Exec(ctx, sb.String(), params...)`, sqlSnippet)
+return e.Exec(ctx, sb.String(), _params...)`, sqlSnippet)
 	}
 
 	return fmt.Sprintf(`%s
 var result %s
-err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 return result, err`, sqlSnippet, m.Result[0].GoFullType())
 }
 
@@ -350,13 +350,13 @@ func (m Method) chainMethodBody() string {
 	case m.SQL.Select != "":
 		return fmt.Sprintf(`%s
 
-e.Select(sb.String(), params...)
+e.Select(sb.String(), _params...)
 
 return e`, m.processSQL(m.SQL.Select))
 	case m.SQL.Where != "":
 		return fmt.Sprintf(`%s
 
-e.Where(clause.Expr{SQL: sb.String(), Vars: params})
+e.Where(clause.Expr{SQL: sb.String(), Vars: _params})
 
 return e`, m.processSQL(m.SQL.Where))
 	}

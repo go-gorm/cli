@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/cli/gorm/examples"
 	"gorm.io/cli/gorm/examples/models"
+	"gorm.io/cli/gorm/field"
 	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -27,7 +29,7 @@ type _QueryInterface[T any] interface {
 	QueryWith(ctx context.Context, user models.User) (T, error)
 	UpdateInfo(ctx context.Context, user models.User, id int) error
 	Filter(ctx context.Context, users []models.User) ([]T, error)
-	FilterByNameAndAge(ctx context.Context, name string, age int) _QueryInterface[T]
+	FilterByNameAndAge(ctx context.Context, params examples.Params) _QueryInterface[T]
 	FilterWithTime(ctx context.Context, start time.Time, end time.Time) ([]T, error)
 }
 
@@ -37,61 +39,61 @@ type _QueryImpl[T any] struct {
 
 func (e _QueryImpl[T]) GetByID(ctx context.Context, id int) (T, error) {
 	var sb strings.Builder
-	params := make([]any, 0, 2)
+	_params := make([]any, 0, 2)
 
 	sb.WriteString("SELECT * FROM ? WHERE id=? AND name = \"@name\"")
-	params = append(params, clause.Table{Name: clause.CurrentTable}, id)
+	_params = append(_params, clause.Table{Name: clause.CurrentTable}, id)
 
 	var result T
-	err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 	return result, err
 }
 
 func (e _QueryImpl[T]) FilterWithColumn(ctx context.Context, column string, value string) (T, error) {
 	var sb strings.Builder
-	params := make([]any, 0, 3)
+	_params := make([]any, 0, 3)
 
 	sb.WriteString("SELECT * FROM ? WHERE ?=?")
-	params = append(params, clause.Table{Name: clause.CurrentTable}, clause.Column{Name: column}, value)
+	_params = append(_params, clause.Table{Name: clause.CurrentTable}, clause.Column{Name: column}, value)
 
 	var result T
-	err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 	return result, err
 }
 
 func (e _QueryImpl[T]) QueryWith(ctx context.Context, user models.User) (T, error) {
 	var sb strings.Builder
-	params := make([]any, 0, 2)
+	_params := make([]any, 0, 2)
 
 	sb.WriteString("SELECT * FROM users")
 	if user.ID > 0 {
 		sb.WriteString(" WHERE id=?")
-		params = append(params, user.ID)
+		_params = append(_params, user.ID)
 	} else if user.Name != "" {
 		sb.WriteString(" WHERE name=?")
-		params = append(params, user.Name)
+		_params = append(_params, user.Name)
 	}
 
 	var result T
-	err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 	return result, err
 }
 
 func (e _QueryImpl[T]) UpdateInfo(ctx context.Context, user models.User, id int) error {
 	var sb strings.Builder
-	params := make([]any, 0, 4)
+	_params := make([]any, 0, 4)
 
 	sb.WriteString("UPDATE ?")
-	params = append(params, clause.Table{Name: clause.CurrentTable})
+	_params = append(_params, clause.Table{Name: clause.CurrentTable})
 	{
 		var tmp strings.Builder
 		if user.Name != "" {
 			tmp.WriteString(" name=?,")
-			params = append(params, user.Name)
+			_params = append(_params, user.Name)
 		}
 		if user.Age > 0 {
 			tmp.WriteString(" age=?,")
-			params = append(params, user.Age)
+			_params = append(_params, user.Age)
 		}
 		if user.Age >= 18 {
 			tmp.WriteString(" is_adult=1")
@@ -106,23 +108,23 @@ func (e _QueryImpl[T]) UpdateInfo(ctx context.Context, user models.User, id int)
 		}
 	}
 	sb.WriteString(" WHERE id=?")
-	params = append(params, id)
+	_params = append(_params, id)
 
-	return e.Exec(ctx, sb.String(), params...)
+	return e.Exec(ctx, sb.String(), _params...)
 }
 
 func (e _QueryImpl[T]) Filter(ctx context.Context, users []models.User) ([]T, error) {
 	var sb strings.Builder
-	params := make([]any, 0, 13)
+	_params := make([]any, 0, 13)
 
 	sb.WriteString("SELECT * FROM ?")
-	params = append(params, clause.Table{Name: clause.CurrentTable})
+	_params = append(_params, clause.Table{Name: clause.CurrentTable})
 	{
 		var tmp strings.Builder
 		for _, user := range users {
 			if user.Name != "" && user.Age > 0 {
 				tmp.WriteString(" (name = ? AND age=? AND role LIKE concat(\"%\",?,\"%\")) OR")
-				params = append(params, user.Name, user.Age, user.Role)
+				_params = append(_params, user.Name, user.Age, user.Role)
 			}
 		}
 		c := strings.TrimSpace(tmp.String())
@@ -135,37 +137,37 @@ func (e _QueryImpl[T]) Filter(ctx context.Context, users []models.User) ([]T, er
 	}
 
 	var result []T
-	err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 	return result, err
 }
 
-func (e _QueryImpl[T]) FilterByNameAndAge(ctx context.Context, name string, age int) _QueryInterface[T] {
+func (e _QueryImpl[T]) FilterByNameAndAge(ctx context.Context, params examples.Params) _QueryInterface[T] {
 	var sb strings.Builder
-	params := make([]any, 0, 2)
+	_params := make([]any, 0, 2)
 
 	sb.WriteString("name=? AND age=?")
-	params = append(params, name, age)
+	_params = append(_params, params.Name, params.Age)
 
-	e.Where(clause.Expr{SQL: sb.String(), Vars: params})
+	e.Where(clause.Expr{SQL: sb.String(), Vars: _params})
 
 	return e
 }
 
 func (e _QueryImpl[T]) FilterWithTime(ctx context.Context, start time.Time, end time.Time) ([]T, error) {
 	var sb strings.Builder
-	params := make([]any, 0, 3)
+	_params := make([]any, 0, 3)
 
 	sb.WriteString("SELECT * FROM ?")
-	params = append(params, clause.Table{Name: clause.CurrentTable})
+	_params = append(_params, clause.Table{Name: clause.CurrentTable})
 	{
 		var tmp strings.Builder
 		if !start.IsZero() {
 			tmp.WriteString(" created_at > ?")
-			params = append(params, start)
+			_params = append(_params, start)
 		}
 		if !end.IsZero() {
 			tmp.WriteString(" AND created_at < ?")
-			params = append(params, end)
+			_params = append(_params, end)
 		}
 		c := strings.TrimSpace(tmp.String())
 		if c != "" {
@@ -177,6 +179,14 @@ func (e _QueryImpl[T]) FilterWithTime(ctx context.Context, start time.Time, end 
 	}
 
 	var result []T
-	err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 	return result, err
+}
+
+var Params = struct {
+	Name field.String
+	Age  field.Number[int]
+}{
+	Name: field.String{}.WithColumn("name"),
+	Age:  field.Number[int]{}.WithColumn("age"),
 }

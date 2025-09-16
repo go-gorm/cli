@@ -57,8 +57,8 @@ type Query[T any] interface {
 	// {{end}}
 	Filter(users []models.User) ([]T, error)
 
-	// where("name=@name AND age=@age")
-	FilterByNameAndAge(name string, age int)
+	// where("name=@params.Name AND age=@params.Age")
+	FilterByNameAndAge(params Params)
 
 	// SELECT * FROM @@table
 	//  {{where}}
@@ -70,4 +70,9 @@ type Query[T any] interface {
 	//    {{end}}
 	//  {{end}}
 	FilterWithTime(start, end time.Time) ([]T, error)
+}
+
+type Params struct {
+	Name string
+	Age  int
 }
