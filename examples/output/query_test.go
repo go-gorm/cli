@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/cli/gorm/examples"
 	"gorm.io/cli/gorm/examples/models"
 	"gorm.io/gorm"
 )
@@ -70,7 +71,7 @@ func TestUserQueries(t *testing.T) {
 
 	t.Run("Test FilterByNameAndAge", func(t *testing.T) {
 		query := Query[models.User](db)
-		result := query.FilterByNameAndAge(context.Background(), "alice", 20)
+		result := query.FilterByNameAndAge(context.Background(), examples.Params{Name: "alice", Age: 20})
 		if result == nil {
 			t.Error("expected a valid query result, got nil")
 		}

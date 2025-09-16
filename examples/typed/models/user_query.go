@@ -8,24 +8,25 @@ import (
 	"strings"
 
 	"gorm.io/cli/gorm/examples/models"
+	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func UserQuery[T any](db *gorm.DB, opts ...clause.Expression) _UserQueryInterface[T] {
 	return _UserQueryImpl[T]{
-		Interface: gorm.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _UserQueryInterface[T any] interface {
-	gorm.Interface[T]
+	typed.Interface[T]
 	QueryWith(ctx context.Context, user models.User) (models.User, error)
 	UpdateWith(ctx context.Context, user models.User) error
 }
 
 type _UserQueryImpl[T any] struct {
-	gorm.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _UserQueryImpl[T]) QueryWith(ctx context.Context, user models.User) (models.User, error) {

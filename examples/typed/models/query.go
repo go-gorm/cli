@@ -6,24 +6,25 @@ import (
 	"context"
 	"strings"
 
+	"gorm.io/cli/gorm/typed"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func Query[T any](db *gorm.DB, opts ...clause.Expression) _QueryInterface[T] {
 	return _QueryImpl[T]{
-		Interface: gorm.G[T](db, opts...),
+		Interface: typed.G[T](db, opts...),
 	}
 }
 
 type _QueryInterface[T any] interface {
-	gorm.Interface[T]
+	typed.Interface[T]
 	GetByID(ctx context.Context, id int) (T, error)
 	FilterWithColumn(ctx context.Context, column string, value string) (T, error)
 }
 
 type _QueryImpl[T any] struct {
-	gorm.Interface[T]
+	typed.Interface[T]
 }
 
 func (e _QueryImpl[T]) GetByID(ctx context.Context, id int) (T, error) {

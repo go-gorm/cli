@@ -27,12 +27,12 @@ type _I1Impl[T any] struct {
 
 func (e _I1Impl[T]) ByID(ctx context.Context, id int) (T, error) {
 	var sb strings.Builder
-	params := make([]any, 0, 2)
+	_params := make([]any, 0, 2)
 
 	sb.WriteString("SELECT * FROM ? WHERE id=?")
-	params = append(params, clause.Table{Name: clause.CurrentTable}, id)
+	_params = append(_params, clause.Table{Name: clause.CurrentTable}, id)
 
 	var result T
-	err := e.Raw(sb.String(), params...).Scan(ctx, &result)
+	err := e.Raw(sb.String(), _params...).Scan(ctx, &result)
 	return result, err
 }

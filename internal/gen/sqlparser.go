@@ -53,7 +53,7 @@ func (t *TextNode) Emit(indent, target string, withPrefix bool) string {
 	var out strings.Builder
 	out.WriteString(fmt.Sprintf("%s%s.WriteString(%q)\n", indent, target, replaced))
 	if len(params) > 0 {
-		out.WriteString(fmt.Sprintf("%sparams = append(params, %s)\n", indent, strings.Join(params, ", ")))
+		out.WriteString(fmt.Sprintf("%s_params = append(_params, %s)\n", indent, strings.Join(params, ", ")))
 	}
 	return out.String()
 }
@@ -334,7 +334,7 @@ func RenderSQLTemplate(tmpl string) (string, error) {
 			if strings.Index(code, "\tfor ") > 0 {
 				baseCount = 4
 			}
-			if strings.Contains(line, "params = append(params") {
+			if strings.Contains(line, "_params = append(_params") {
 				count += strings.Count(line, ",") * baseCount
 			}
 		}
@@ -344,7 +344,7 @@ func RenderSQLTemplate(tmpl string) (string, error) {
 	}
 
 	sb.WriteString("var sb strings.Builder\n")
-	sb.WriteString(fmt.Sprintf("params := make([]any, 0, %d)\n\n", paramsCount))
+	sb.WriteString(fmt.Sprintf("_params := make([]any, 0, %d)\n\n", paramsCount))
 
 	for _, code := range codes {
 		sb.WriteString(code)
