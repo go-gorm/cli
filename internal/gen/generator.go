@@ -104,7 +104,7 @@ func (g *Generator) Gen() error {
 	tmpl, _ := template.New("").Parse(pkgTmpl)
 
 	// files contains config
-	filesWithCfg := []string{}
+	var filesWithCfg []string
 	for pth, file := range g.Files {
 		if file.Config != nil {
 			filesWithCfg = append(filesWithCfg, pth)
@@ -681,6 +681,16 @@ func (p *File) parseFieldType(expr ast.Expr, pkgName string, fullMode bool) stri
 				return p.getFullImportPath(pkgName) + "." + t.Name
 			}
 			return pkgName + "." + t.Name
+		}
+
+		if !unicode.IsLower(rune(t.Name[0])) && !strings.Contains(t.Name, ".") { // exported type and not another package type
+			if fullMode && p.PackagePath != "" {
+				return p.PackagePath + "." + t.Name
+			}
+
+			if p.Package != "" {
+				return p.Package + "." + t.Name
+			}
 		}
 
 		return t.Name

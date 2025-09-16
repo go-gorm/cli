@@ -141,6 +141,6 @@ func TestProcessStructType(t *testing.T) {
 		trimmed.Fields = append(trimmed.Fields, Field{Name: f.Name, DBName: f.DBName, GoType: f.GoType, NamedGoType: f.NamedGoType})
 	}
 	if !reflect.DeepEqual(trimmed, expected) {
-		t.Errorf("Expected %+v, got %+v", expected, trimmed)
+		t.Errorf("Expected %+v, \n got %+v", expected, trimmed)
 	}
 }

@@ -202,8 +202,8 @@ type Query[T any] interface {
 
   // SELECT * FROM @@table
   // {{where}}
-  //   {{if @user.Name }} name=@user.Name {{end}}
-  //   {{if @user.Age > 0}} AND age=@user.Age {{end}}
+  //   {{if user.Name }} name=@user.Name {{end}}
+  //   {{if user.Age > 0}} AND age=@user.Age {{end}}
   // {{end}}
   SearchUsers(user User) ([]T, error)
 
