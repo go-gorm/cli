@@ -1,2 +1,145 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# Build output
 g
 gorm
+/bin/
+/build/
+/dist/
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Bower dependency directory (https://bower.io/)
+bower_components
+
+# node_modules (if using Node.js tools)
+node_modules/
+
+# Temporary folders
+tmp/
+temp/
+
+# Go module download cache
+$GOPATH/pkg/mod/
+
+# Go build cache
+$GOCACHE/
+
+# Air live reload
+tmp/
+
+# Local environment variables
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+
+# Folders
+_obj
+_test
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+# cgo generated files
+_cgo_gotypes.go
+_cgo_export.*
+
+# test generated files
+*_test_gen.go
+
+# Ignore generated documentation
+*.html
+
+# Ignore backup files
+*.bak
+*.backup
+*.orig
+
+# Ignore profiling files
+*.prof
+cpu.out
+mem.out
+profile.out
+
+# Ignore security sensitive files
+*.pem
+*.key
+*.crt
+*.p12
+
+# Docker files (if not needed in repo)
+# Dockerfile
+# docker-compose.yml
+# .dockerignore
+
+# Kubernetes files (if not needed in repo)
+# *.yaml
+# *.yml
+
+# Generated code (if applicable)
+# *_gen.go
+# *.pb.go
+
+# Config files with sensitive data
+config.json
+secrets.yaml
+secrets.yml

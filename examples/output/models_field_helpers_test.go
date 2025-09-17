@@ -396,6 +396,13 @@ func TestGeneratedModels_FieldTypes(t *testing.T) {
 		// Language
 		_ field.String = generated.Language.Code
 		_ field.String = generated.Language.Name
+
+		// CreditCard
+		_ field.Number[uint]          = generated.CreditCard.ID
+		_ field.Time                  = generated.CreditCard.CreatedAt
+		_ field.Time                  = generated.CreditCard.UpdatedAt
+		_ field.Field[gorm.DeletedAt] = generated.CreditCard.DeletedAt
+		_ field.String                = generated.CreditCard.Number
 	)
 }
 

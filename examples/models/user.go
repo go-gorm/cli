@@ -64,3 +64,8 @@ type Language struct {
 	Code string `gorm:"primarykey"`
 	Name string
 }
+
+type CreditCard struct {
+	*gorm.Model
+	Number string
+}

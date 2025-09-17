@@ -130,3 +130,17 @@ var Language = struct {
 	Code: field.String{}.WithColumn("code"),
 	Name: field.String{}.WithColumn("name"),
 }
+
+var CreditCard = struct {
+	ID        field.Number[uint]
+	CreatedAt field.Time
+	UpdatedAt field.Time
+	DeletedAt field.Field[gorm.DeletedAt]
+	Number    field.String
+}{
+	ID:        field.Number[uint]{}.WithColumn("id"),
+	CreatedAt: field.Time{}.WithColumn("created_at"),
+	UpdatedAt: field.Time{}.WithColumn("updated_at"),
+	DeletedAt: field.Field[gorm.DeletedAt]{}.WithColumn("deleted_at"),
+	Number:    field.String{}.WithColumn("number"),
+}
