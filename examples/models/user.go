@@ -4,8 +4,13 @@ import (
 	"database/sql"
 	"time"
 
+	"gorm.io/cli/gorm/genconfig"
 	"gorm.io/gorm"
 )
+
+var _ = genconfig.Config{
+	ExcludeStructs: []any{BaseModel{}},
+}
 
 // User has one `Account` (has one), many `Pets` (has many) and `Toys` (has many - polymorphic)
 // He works in a Company (belongs to), he has a Manager (belongs to - single-table), and also managed a Team (has many - single-table)
@@ -49,7 +54,7 @@ type Pet struct {
 }
 
 type Toy struct {
-	gorm.Model
+	BaseModel
 	Name      string
 	OwnerID   uint
 	OwnerType string
@@ -68,4 +73,11 @@ type Language struct {
 type CreditCard struct {
 	*gorm.Model
 	Number string
+}
+
+type BaseModel struct {
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
