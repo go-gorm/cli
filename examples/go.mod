@@ -1,6 +1,6 @@
 module gorm.io/cli/gorm/examples
 
-go 1.18
+go 1.21
 
 require (
 	gorm.io/cli/gorm v0.2.3
