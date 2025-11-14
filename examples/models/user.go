@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gorm.io/cli/gorm/genconfig"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -18,24 +19,25 @@ var _ = genconfig.Config{
 // His pet also has one Toy (has one - polymorphic)
 type User struct {
 	gorm.Model
-	Name      string
-	Age       int
-	Birthday  *time.Time
-	Score     sql.NullInt64
-	LastLogin sql.NullTime
-	Account   Account
-	Pets      []*Pet
-	Toys      []Toy `gorm:"polymorphic:Owner"`
-	CompanyID *int
-	Company   Company
-	ManagerID *uint
-	Manager   *User
-	Team      []User     `gorm:"foreignkey:ManagerID"`
-	Languages []Language `gorm:"many2many:UserSpeak"`
-	Friends   []*User    `gorm:"many2many:user_friends"`
-	Role      string
-	IsAdult   bool   `gorm:"column:is_adult"`
-	Profile   string `gen:"json"`
+	Name       string
+	Age        int
+	Birthday   *time.Time
+	Score      sql.NullInt64
+	LastLogin  sql.NullTime
+	Account    Account
+	Pets       []*Pet
+	Toys       []Toy `gorm:"polymorphic:Owner"`
+	CompanyID  *int
+	Company    Company
+	ManagerID  *uint
+	Manager    *User
+	Team       []User     `gorm:"foreignkey:ManagerID"`
+	Languages  []Language `gorm:"many2many:UserSpeak"`
+	Friends    []*User    `gorm:"many2many:user_friends"`
+	Role       string
+	IsAdult    bool   `gorm:"column:is_adult"`
+	Profile    string `gen:"json"`
+	AwardTypes datatypes.JSONSlice[int]
 }
 
 type Account struct {

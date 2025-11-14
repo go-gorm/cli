@@ -97,7 +97,7 @@ func getCurrentPackagePath(filename string) string {
 // loadNamedType returns a named type from a package with basic caching.
 func loadNamedType(modRoot, pkgPath, name string) types.Type {
 	cfg := &packages.Config{
-		Mode: packages.NeedTypes | packages.NeedName,
+		Mode: packages.NeedTypes | packages.NeedName | packages.NeedDeps,
 		Dir:  modRoot,
 	}
 
@@ -114,7 +114,7 @@ func loadNamedType(modRoot, pkgPath, name string) types.Type {
 // loadStructFromPackage loads a struct type definition from an external package by name
 func loadNamedStructType(modRoot, pkgPath, name string) (*ast.StructType, error) {
 	cfg := &packages.Config{
-		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedImports,
+		Mode: packages.NeedSyntax | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedName,
 		Dir:  modRoot,
 	}
 

@@ -396,6 +396,22 @@ var typeMap = map[string]string{
 	"time.Time": "field.Time",
 }
 
+var primitiveNumberTypes = map[string]struct{}{
+	"int":     {},
+	"int8":    {},
+	"int16":   {},
+	"int32":   {},
+	"int64":   {},
+	"uint":    {},
+	"uint8":   {},
+	"uint16":  {},
+	"uint32":  {},
+	"uint64":  {},
+	"uintptr": {},
+	"float32": {},
+	"float64": {},
+}
+
 // Type returns the field type string for template generation
 func (f Field) Type() string {
 	// Check FieldTypeMap and FieldNameMap from configs first
@@ -426,7 +442,7 @@ func (f Field) Type() string {
 		return mapped
 	}
 
-	if strings.Contains(goType, "int") || strings.Contains(goType, "float") {
+	if _, ok := primitiveNumberTypes[goType]; ok {
 		return fmt.Sprintf("field.Number[%s]", goType)
 	}
 

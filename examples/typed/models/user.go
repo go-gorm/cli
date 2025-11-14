@@ -8,55 +8,58 @@ import (
 	"gorm.io/cli/gorm/examples"
 	"gorm.io/cli/gorm/examples/models"
 	"gorm.io/cli/gorm/field"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 var User = struct {
-	ID        field.Number[uint]
-	CreatedAt field.Time
-	UpdatedAt field.Time
-	DeletedAt field.Field[gorm.DeletedAt]
-	Name      field.String
-	Age       field.Number[int]
-	Birthday  field.Time
-	Score     field.Field[sql.NullInt64]
-	LastLogin field.Time
-	Account   field.Struct[models.Account]
-	Pets      field.Slice[models.Pet]
-	Toys      field.Slice[models.Toy]
-	CompanyID field.Number[int]
-	Company   field.Struct[models.Company]
-	ManagerID field.Number[uint]
-	Manager   field.Struct[models.User]
-	Team      field.Slice[models.User]
-	Languages field.Slice[models.Language]
-	Friends   field.Slice[models.User]
-	Role      field.String
-	IsAdult   field.Bool
-	Profile   examples.JSON
+	ID         field.Number[uint]
+	CreatedAt  field.Time
+	UpdatedAt  field.Time
+	DeletedAt  field.Field[gorm.DeletedAt]
+	Name       field.String
+	Age        field.Number[int]
+	Birthday   field.Time
+	Score      field.Field[sql.NullInt64]
+	LastLogin  field.Time
+	Account    field.Struct[models.Account]
+	Pets       field.Slice[models.Pet]
+	Toys       field.Slice[models.Toy]
+	CompanyID  field.Number[int]
+	Company    field.Struct[models.Company]
+	ManagerID  field.Number[uint]
+	Manager    field.Struct[models.User]
+	Team       field.Slice[models.User]
+	Languages  field.Slice[models.Language]
+	Friends    field.Slice[models.User]
+	Role       field.String
+	IsAdult    field.Bool
+	Profile    examples.JSON
+	AwardTypes field.Struct[datatypes.JSONSlice[int]]
 }{
-	ID:        field.Number[uint]{}.WithColumn("id"),
-	CreatedAt: field.Time{}.WithColumn("created_at"),
-	UpdatedAt: field.Time{}.WithColumn("updated_at"),
-	DeletedAt: field.Field[gorm.DeletedAt]{}.WithColumn("deleted_at"),
-	Name:      field.String{}.WithColumn("name"),
-	Age:       field.Number[int]{}.WithColumn("age"),
-	Birthday:  field.Time{}.WithColumn("birthday"),
-	Score:     field.Field[sql.NullInt64]{}.WithColumn("score"),
-	LastLogin: field.Time{}.WithColumn("last_login"),
-	Account:   field.Struct[models.Account]{}.WithName("Account"),
-	Pets:      field.Slice[models.Pet]{}.WithName("Pets"),
-	Toys:      field.Slice[models.Toy]{}.WithName("Toys"),
-	CompanyID: field.Number[int]{}.WithColumn("company_id"),
-	Company:   field.Struct[models.Company]{}.WithName("Company"),
-	ManagerID: field.Number[uint]{}.WithColumn("manager_id"),
-	Manager:   field.Struct[models.User]{}.WithName("Manager"),
-	Team:      field.Slice[models.User]{}.WithName("Team"),
-	Languages: field.Slice[models.Language]{}.WithName("Languages"),
-	Friends:   field.Slice[models.User]{}.WithName("Friends"),
-	Role:      field.String{}.WithColumn("role"),
-	IsAdult:   field.Bool{}.WithColumn("is_adult"),
-	Profile:   examples.JSON{}.WithColumn("profile"),
+	ID:         field.Number[uint]{}.WithColumn("id"),
+	CreatedAt:  field.Time{}.WithColumn("created_at"),
+	UpdatedAt:  field.Time{}.WithColumn("updated_at"),
+	DeletedAt:  field.Field[gorm.DeletedAt]{}.WithColumn("deleted_at"),
+	Name:       field.String{}.WithColumn("name"),
+	Age:        field.Number[int]{}.WithColumn("age"),
+	Birthday:   field.Time{}.WithColumn("birthday"),
+	Score:      field.Field[sql.NullInt64]{}.WithColumn("score"),
+	LastLogin:  field.Time{}.WithColumn("last_login"),
+	Account:    field.Struct[models.Account]{}.WithName("Account"),
+	Pets:       field.Slice[models.Pet]{}.WithName("Pets"),
+	Toys:       field.Slice[models.Toy]{}.WithName("Toys"),
+	CompanyID:  field.Number[int]{}.WithColumn("company_id"),
+	Company:    field.Struct[models.Company]{}.WithName("Company"),
+	ManagerID:  field.Number[uint]{}.WithColumn("manager_id"),
+	Manager:    field.Struct[models.User]{}.WithName("Manager"),
+	Team:       field.Slice[models.User]{}.WithName("Team"),
+	Languages:  field.Slice[models.Language]{}.WithName("Languages"),
+	Friends:    field.Slice[models.User]{}.WithName("Friends"),
+	Role:       field.String{}.WithColumn("role"),
+	IsAdult:    field.Bool{}.WithColumn("is_adult"),
+	Profile:    examples.JSON{}.WithColumn("profile"),
+	AwardTypes: field.Struct[datatypes.JSONSlice[int]]{}.WithName("AwardTypes"),
 }
 
 var Account = struct {
