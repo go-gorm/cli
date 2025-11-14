@@ -18,7 +18,8 @@ var _ = genconfig.Config{
 		"date": field.Time{},
 		"json": JSON{},
 	},
-	IncludeStructs: []any{},
+	IncludeStructs:    []any{},
+	ExcludeInterfaces: []any{Entity(nil)},
 }
 
 type Query[T any] interface {
@@ -70,6 +71,11 @@ type Query[T any] interface {
 	//    {{end}}
 	//  {{end}}
 	FilterWithTime(start, end time.Time) ([]T, error)
+}
+
+type Entity interface {
+	TableName() string
+	Key() any
 }
 
 type Params struct {

@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -75,6 +76,58 @@ func TestGeneratorWithQueryInterface(t *testing.T) {
 	if goldenStr != generatedStr {
 		t.Errorf("generated file differs from golden file\nGOLDEN: %s\nGENERATED: %s\n%s",
 			goldenPath, generatedFile, generatedStr)
+	}
+}
+
+func TestExcludeInterfacesSkipsInvalidInterfaces(t *testing.T) {
+	writeSample := func(dir string, withExclude bool) string {
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module temp.test\n\ngo 1.21\n"), 0o644); err != nil {
+			t.Fatalf("write go.mod: %v", err)
+		}
+
+		cfg := "ExcludeInterfaces: []any{Entity(nil)},"
+		if !withExclude {
+			cfg = ""
+		}
+
+		src := fmt.Sprintf(`package sample
+
+import "gorm.io/cli/gorm/genconfig"
+
+var _ = genconfig.Config{
+	%s
+}
+
+type Entity interface {
+	TableName() string
+}
+`, cfg)
+
+		path := filepath.Join(dir, "sample.go")
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatalf("write sample.go: %v", err)
+		}
+		return path
+	}
+
+	runGen := func(file string) error {
+		g := &Generator{Files: map[string]*File{}, outPath: filepath.Join(filepath.Dir(file), "out")}
+		if err := g.Process(file); err != nil {
+			return err
+		}
+		return g.Gen()
+	}
+
+	withExcludeDir := t.TempDir()
+	withExcludeFile := writeSample(withExcludeDir, true)
+	if err := runGen(withExcludeFile); err != nil {
+		t.Fatalf("generator should succeed when interface is excluded: %v", err)
+	}
+
+	withoutExcludeDir := t.TempDir()
+	withoutExcludeFile := writeSample(withoutExcludeDir, false)
+	if err := runGen(withoutExcludeFile); err == nil {
+		t.Fatalf("expected generator failure when interface is not excluded")
 	}
 }
 

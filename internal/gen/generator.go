@@ -50,6 +50,7 @@ type (
 		IfaceName string
 		Doc       string
 		Methods   []*Method
+		err       error
 	}
 	Method struct {
 		Name      string
@@ -183,6 +184,12 @@ func (g *Generator) Gen() error {
 						file.Structs = slices.Delete(file.Structs, i, i+1)
 					}
 				}
+			}
+		}
+
+		for _, iface := range file.Interfaces {
+			if iface.err != nil {
+				return fmt.Errorf("invalid interface %s: %w", iface.Name, iface.err)
 			}
 		}
 
@@ -621,15 +628,27 @@ func (p *File) processInterfaceType(n *ast.TypeSpec, data *ast.InterfaceType) In
 
 			if len(method.Result) == 0 {
 				if method.SQL.Where == "" && method.SQL.Select == "" || method.SQL.Raw != "" {
-					panic(fmt.Sprintf("Method %s.%s: finish method must return at least one value (last return value must be error)", n.Name.Name, method.Name))
+					if r.err == nil {
+						r.err = fmt.Errorf("Method %s.%s: finish method must return at least one value (last return value must be error)", n.Name.Name, method.Name)
+					}
+					return r
 				}
 			} else if len(method.Result) > 2 {
-				panic(fmt.Sprintf("Method %s.%s: maximum number of return values allowed is 2 (first as data, second as error)", n.Name.Name, method.Name))
+				if r.err == nil {
+					r.err = fmt.Errorf("Method %s.%s: maximum number of return values allowed is 2 (first as data, second as error)", n.Name.Name, method.Name)
+				}
+				return r
 			} else if strings.ToLower(method.Result[len(method.Result)-1].Type) != "error" {
 				if len(method.Result) == 1 {
-					panic(fmt.Sprintf("Method %s.%s: when only one return value is defined, its type must be error", n.Name.Name, method.Name))
+					if r.err == nil {
+						r.err = fmt.Errorf("Method %s.%s: when only one return value is defined, its type must be error", n.Name.Name, method.Name)
+					}
+					return r
 				}
-				panic(fmt.Sprintf("Method %s.%s: when two return values are defined, the second must be error", n.Name.Name, method.Name))
+				if r.err == nil {
+					r.err = fmt.Errorf("Method %s.%s: when two return values are defined, the second must be error", n.Name.Name, method.Name)
+				}
+				return r
 			}
 		}
 	}
