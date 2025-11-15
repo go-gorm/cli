@@ -143,3 +143,4 @@ profile.out
 config.json
 secrets.yaml
 secrets.yml
+migrations

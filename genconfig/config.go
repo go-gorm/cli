@@ -26,6 +26,9 @@ type Config struct {
 	// where this Config literal is found.
 	OutPath string
 
+	// Tables limits generation to the provided table names when applicable.
+	Tables []string
+
 	// FieldTypeMap maps a Go type instance (key) to a wrapper type instance (value).
 	// Example: map[any]any{ sql.NullTime{}: field.Time{} }
 	// The generator reads the AST to extract the type expressions from both
