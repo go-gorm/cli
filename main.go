@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"gorm.io/cli/gorm/internal/gen"
+	"gorm.io/cli/gorm/internal/migration"
 )
 
 func main() {
@@ -15,6 +16,7 @@ func main() {
 	}
 
 	rootCmd.AddCommand(gen.New())
+	rootCmd.AddCommand(migration.New())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
