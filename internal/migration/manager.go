@@ -98,6 +98,6 @@ func main() {
 	migration.New(migration.Config{
 		ModelsDir:     {{printf "%q" .ModelsDir}},
 		MigrationsDir: {{printf "%q" .MigrationsDir}},
-	}, migration.WithDBAdaptor(DB)).Run(migrations)
+	}, migration.WithDBAdapter(DB)).Run(migrations)
 }
 `

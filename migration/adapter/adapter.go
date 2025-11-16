@@ -1,4 +1,4 @@
-package runtime
+package adapter
 
 import (
 	"bufio"
@@ -15,20 +15,42 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+// Migration represents a named schema change.
+type Migration struct {
+	Name string
+	Up   func(tx *gorm.DB) error
+	Down func(tx *gorm.DB) error
+}
+
 // Adapter describes the contract used by migrations/main.go.
 type Adapter interface {
-	Up(limit int) error
-	Down(steps int) error
-	Status() error
-	Diff() error
+	Up(UpOptions) error
+	Down(DownOptions) error
+	Status(StatusOptions) error
+	Diff(DiffOptions) error
+	RegisterMigration(Migration)
 	GenerateModel(GenerateModelOptions) error
 	GenerateMigration(GenerateMigrationOptions) error
 }
 
+// UpOptions controls how many migrations to apply.
+type UpOptions struct {
+	Limit int
+}
+
+// DownOptions controls how many migrations to rollback.
+type DownOptions struct {
+	Steps int
+}
+
+// StatusOptions currently holds no fields; defined for future extension.
+type StatusOptions struct{}
+
+// DiffOptions currently holds no fields; defined for future extension.
+type DiffOptions struct{}
+
 // GenerateModelOptions drives DBAdapter.GenerateModel.
 type GenerateModelOptions struct {
-	PackageName string
-	SchemaPath  string
 	DryRun      bool
 	AutoApprove bool
 	Tables      []string
@@ -43,18 +65,15 @@ type GenerateMigrationOptions struct {
 
 // Config configures the DBAdapter.
 type Config struct {
-	RootDir       string
 	ModelsDir     string
 	MigrationsDir string
-	Stdout        io.Writer
-	Stderr        io.Writer
-	Stdin         io.Reader
 }
 
 // DBAdapter implements Adapter using a gorm.DB connection.
 type DBAdapter struct {
-	db  *gorm.DB
-	cfg Config
+	db         *gorm.DB
+	cfg        Config
+	migrations map[string]Migration
 }
 
 // NewDBAdapter wires a DBAdapter for the provided DB connection.
@@ -62,25 +81,14 @@ func NewDBAdapter(db *gorm.DB, cfg Config) (*DBAdapter, error) {
 	if db == nil {
 		return nil, errors.New("migration runtime: db is required")
 	}
-	if cfg.Stdout == nil {
-		cfg.Stdout = os.Stdout
+	return &DBAdapter{db: db, cfg: cfg, migrations: make(map[string]Migration)}, nil
+}
+
+func (a *DBAdapter) RegisterMigration(m Migration) {
+	if m.Name == "" {
+		panic("migration runtime: migration must have a name")
 	}
-	if cfg.Stderr == nil {
-		cfg.Stderr = os.Stderr
-	}
-	if cfg.Stdin == nil {
-		cfg.Stdin = os.Stdin
-	}
-	if cfg.RootDir == "" {
-		cfg.RootDir = "."
-	}
-	if cfg.ModelsDir == "" {
-		cfg.ModelsDir = "."
-	}
-	if cfg.MigrationsDir == "" {
-		cfg.MigrationsDir = "."
-	}
-	return &DBAdapter{db: db, cfg: cfg}, nil
+	a.migrations[m.Name] = m
 }
 
 func (a *DBAdapter) ensureSchemaTable() error {
@@ -88,7 +96,7 @@ func (a *DBAdapter) ensureSchemaTable() error {
 }
 
 // Up applies pending migrations, tracking state in schema_migrations.
-func (a *DBAdapter) Up(limit int) error {
+func (a *DBAdapter) Up(opts UpOptions) error {
 	if err := a.ensureSchemaTable(); err != nil {
 		return err
 	}
@@ -97,26 +105,29 @@ func (a *DBAdapter) Up(limit int) error {
 		return err
 	}
 	if len(pending) == 0 {
-		fmt.Fprintln(a.cfg.Stdout, "No pending migrations")
+		fmt.Fprintln(os.Stdout, "No pending migrations")
 		return nil
 	}
-	if limit > 0 && limit < len(pending) {
-		pending = pending[:limit]
+	if opts.Limit > 0 && opts.Limit < len(pending) {
+		pending = pending[:opts.Limit]
 	}
 	for _, m := range pending {
-		if err := a.db.Transaction(m.Up); err != nil {
+		if err := a.db.Transaction(func(tx *gorm.DB) error {
+			if err := m.Up(tx); err != nil {
+				return err
+			}
+			return a.recordApplied(m.Name)
+		}); err != nil {
 			return err
 		}
-		if err := a.recordApplied(m.Name); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.cfg.Stdout, "Applied %s\n", m.Name)
+		fmt.Fprintf(os.Stdout, "Applied %s\n", m.Name)
 	}
 	return nil
 }
 
 // Down rolls back the latest applied migrations.
-func (a *DBAdapter) Down(steps int) error {
+func (a *DBAdapter) Down(opts DownOptions) error {
+	steps := opts.Steps
 	if steps <= 0 {
 		steps = 1
 	}
@@ -128,7 +139,7 @@ func (a *DBAdapter) Down(steps int) error {
 		return err
 	}
 	if len(applied) == 0 {
-		fmt.Fprintln(a.cfg.Stdout, "No applied migrations")
+		fmt.Fprintln(os.Stdout, "No applied migrations")
 		return nil
 	}
 	if steps > len(applied) {
@@ -136,26 +147,28 @@ func (a *DBAdapter) Down(steps int) error {
 	}
 	for i := 0; i < steps; i++ {
 		record := applied[i]
-		mig, ok := migrationByName(record.Name)
+		mig, ok := a.migrationByName(record.Name)
 		if !ok {
 			return fmt.Errorf("migration runtime: migration %s not registered", record.Name)
 		}
 		if mig.Down == nil {
 			return fmt.Errorf("migration runtime: migration %s has no Down function", record.Name)
 		}
-		if err := a.db.Transaction(mig.Down); err != nil {
+		if err := a.db.Transaction(func(tx *gorm.DB) error {
+			if err := mig.Down(tx); err != nil {
+				return err
+			}
+			return a.removeApplied(record.Name)
+		}); err != nil {
 			return err
 		}
-		if err := a.removeApplied(record.Name); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.cfg.Stdout, "Rolled back %s\n", record.Name)
+		fmt.Fprintf(os.Stdout, "Rolled back %s\n", record.Name)
 	}
 	return nil
 }
 
 // Status prints applied/pending migrations.
-func (a *DBAdapter) Status() error {
+func (a *DBAdapter) Status(_ StatusOptions) error {
 	if err := a.ensureSchemaTable(); err != nil {
 		return err
 	}
@@ -167,32 +180,32 @@ func (a *DBAdapter) Status() error {
 	for _, record := range applied {
 		appliedSet[record.Name] = record.AppliedAt
 	}
-	regs := registeredMigrations()
-	fmt.Fprintln(a.cfg.Stdout, "NAME\tSTATUS\tAPPLIED AT")
+	regs := a.registeredMigrations()
+	fmt.Fprintln(os.Stdout, "NAME\tSTATUS\tAPPLIED AT")
 	for _, mig := range regs {
 		if ts, ok := appliedSet[mig.Name]; ok {
-			fmt.Fprintf(a.cfg.Stdout, "%s\tapplied\t%s\n", mig.Name, ts.UTC().Format(time.RFC3339))
+			fmt.Fprintf(os.Stdout, "%s\tapplied\t%s\n", mig.Name, ts.UTC().Format(time.RFC3339))
 		} else {
-			fmt.Fprintf(a.cfg.Stdout, "%s\tpending\t-\n", mig.Name)
+			fmt.Fprintf(os.Stdout, "%s\tpending\t-\n", mig.Name)
 		}
 	}
-	fmt.Fprintf(a.cfg.Stdout, "Total: %d | Applied: %d | Pending: %d\n", len(regs), len(applied), len(regs)-len(applied))
+	fmt.Fprintf(os.Stdout, "Total: %d | Applied: %d | Pending: %d\n", len(regs), len(applied), len(regs)-len(applied))
 	return nil
 }
 
 // Diff prints pending migrations (alias for Status pending section).
-func (a *DBAdapter) Diff() error {
+func (a *DBAdapter) Diff(_ DiffOptions) error {
 	pending, err := a.pendingMigrations()
 	if err != nil {
 		return err
 	}
 	if len(pending) == 0 {
-		fmt.Fprintln(a.cfg.Stdout, "Models match the database schema")
+		fmt.Fprintln(os.Stdout, "Models match the database schema")
 		return nil
 	}
-	fmt.Fprintln(a.cfg.Stdout, "Pending migrations detected:")
+	fmt.Fprintln(os.Stdout, "Pending migrations detected:")
 	for _, mig := range pending {
-		fmt.Fprintf(a.cfg.Stdout, "- %s\n", mig.Name)
+		fmt.Fprintf(os.Stdout, "- %s\n", mig.Name)
 	}
 	return nil
 }
@@ -205,32 +218,18 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 	}
 	tables = filterTables(tables, opts.Tables)
 	if len(tables) == 0 {
-		fmt.Fprintln(a.cfg.Stdout, "No tables found")
+		fmt.Fprintln(os.Stdout, "No tables found")
 		return nil
 	}
 	snippet := ""
-	if opts.SchemaPath != "" {
-		schemaPath := opts.SchemaPath
-		if !filepath.IsAbs(schemaPath) {
-			schemaPath = filepath.Join(a.rootDir(), schemaPath)
-		}
-		data, err := os.ReadFile(schemaPath)
-		if err != nil {
-			return fmt.Errorf("read schema: %w", err)
-		}
-		snippet = strings.TrimSpace(string(data))
-	}
 	ns := schema.NamingStrategy{}
-	pkg := opts.PackageName
-	if pkg == "" {
-		pkg = "models"
-	}
+	pkg := "models"
 	for _, table := range tables {
 		structName := ns.SchemaName(table)
 		path := filepath.Join(a.modelsDir(), fmt.Sprintf("%s.go", table))
 		content := renderModelFile(pkg, table, structName, snippet)
 		if opts.DryRun {
-			fmt.Fprintf(a.cfg.Stdout, "--- model preview (%s) ---%c%s\n--- end ---\n", path, '\n', content)
+			fmt.Fprintf(os.Stdout, "--- model preview (%s) ---%c%s\n--- end ---\n", path, '\n', content)
 			continue
 		}
 		ok, err := a.confirmWrite(path, opts.AutoApprove)
@@ -238,7 +237,7 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 			return err
 		}
 		if !ok {
-			fmt.Fprintf(a.cfg.Stdout, "Skipped %s\n", path)
+			fmt.Fprintf(os.Stdout, "Skipped %s\n", path)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -247,7 +246,7 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.cfg.Stdout, "Model written: %s\n", path)
+		fmt.Fprintf(os.Stdout, "Model written: %s\n", path)
 	}
 	return nil
 }
@@ -263,7 +262,7 @@ func (a *DBAdapter) GenerateMigration(opts GenerateMigrationOptions) error {
 	path := filepath.Join(a.migrationsDir(), filename)
 	content := renderMigrationFile(strings.TrimSuffix(filename, ".go"))
 	if opts.DryRun {
-		fmt.Fprintf(a.cfg.Stdout, "--- migration preview (%s) ---%c%s\n--- end ---\n", path, '\n', content)
+		fmt.Fprintf(os.Stdout, "--- migration preview (%s) ---%c%s\n--- end ---\n", path, '\n', content)
 		return nil
 	}
 	ok, err := a.confirmWrite(path, opts.AutoApprove)
@@ -271,7 +270,7 @@ func (a *DBAdapter) GenerateMigration(opts GenerateMigrationOptions) error {
 		return err
 	}
 	if !ok {
-		fmt.Fprintf(a.cfg.Stdout, "Skipped %s\n", path)
+		fmt.Fprintf(os.Stdout, "Skipped %s\n", path)
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -280,7 +279,7 @@ func (a *DBAdapter) GenerateMigration(opts GenerateMigrationOptions) error {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.cfg.Stdout, "Migration created: %s\n", path)
+	fmt.Fprintf(os.Stdout, "Migration created: %s\n", path)
 	return nil
 }
 
@@ -299,8 +298,8 @@ func (a *DBAdapter) confirmWrite(path string, auto bool) (bool, error) {
 	if auto {
 		return true, nil
 	}
-	reader := bufio.NewReader(a.cfg.Stdin)
-	fmt.Fprintf(a.cfg.Stdout, "%s %s? [y/N]: ", strings.Title(action), path)
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprintf(os.Stdout, "%s %s? [y/N]: ", strings.Title(action), path)
 	line, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false, err
@@ -309,22 +308,37 @@ func (a *DBAdapter) confirmWrite(path string, auto bool) (bool, error) {
 	return response == "y" || response == "yes", nil
 }
 
-func (a *DBAdapter) rootDir() string {
-	return a.cfg.RootDir
+func (a *DBAdapter) registeredMigrations() []Migration {
+	if len(a.migrations) == 0 {
+		return nil
+	}
+	out := make([]Migration, 0, len(a.migrations))
+	for _, m := range a.migrations {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func (a *DBAdapter) migrationByName(name string) (Migration, bool) {
+	m, ok := a.migrations[name]
+	return m, ok
 }
 
 func (a *DBAdapter) modelsDir() string {
 	if filepath.IsAbs(a.cfg.ModelsDir) {
 		return a.cfg.ModelsDir
 	}
-	return filepath.Join(a.rootDir(), a.cfg.ModelsDir)
+	return filepath.Clean(a.cfg.ModelsDir)
 }
 
 func (a *DBAdapter) migrationsDir() string {
 	if filepath.IsAbs(a.cfg.MigrationsDir) {
 		return a.cfg.MigrationsDir
 	}
-	return filepath.Join(a.rootDir(), a.cfg.MigrationsDir)
+	return filepath.Clean(a.cfg.MigrationsDir)
 }
 
 func filterTables(all, subset []string) []string {

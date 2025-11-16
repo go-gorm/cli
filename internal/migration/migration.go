@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -17,10 +18,11 @@ func New() *cobra.Command {
 	var mgr Manager
 
 	cmd := &cobra.Command{
-		Use:          "migrate",
-		Short:        "Manage database migrations and schema changes",
-		Long:         strings.TrimSpace("Run schema diff powered migrations.\n Initialize ./migrations/main.go and add timestamped Go migration files."),
-		SilenceUsage: true,
+		Use:           "migrate",
+		Short:         "Manage database migrations and schema changes",
+		Long:          strings.TrimSpace("DB→Model reflection, Model→Migration generation, and diff checks."),
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	cmd.PersistentFlags().StringVar(&mgr.ModelsDir, "models", defaultModelsDirName, "Directory to place generated models")
@@ -28,11 +30,12 @@ func New() *cobra.Command {
 
 	cmd.AddCommand(
 		newInitCmd(mgr),
-		newUpCmd(&mgr.MigrationsDir),
-		newDownCmd(&mgr.MigrationsDir),
-		newStatusCmd(&mgr.MigrationsDir),
-		newDiffCmd(&mgr.MigrationsDir),
-		newGenCmd(&mgr.MigrationsDir),
+		newUpCmd(mgr),
+		newDownCmd(mgr),
+		newStatusCmd(mgr),
+		newDiffCmd(mgr),
+		newReflectCmd(mgr),
+		newCreateCmd(mgr),
 	)
 
 	return cmd
@@ -61,7 +64,7 @@ func newInitCmd(mgr Manager) *cobra.Command {
 	return cmd
 }
 
-func newUpCmd(projectDir *string) *cobra.Command {
+func newUpCmd(mgr Manager) *cobra.Command {
 	var limit int
 
 	cmd := &cobra.Command{
@@ -73,7 +76,7 @@ func newUpCmd(projectDir *string) *cobra.Command {
 			if limit > 0 {
 				flags = append(flags, fmt.Sprintf("--limit=%d", limit))
 			}
-			return runProject(cmd, *projectDir, "up", flags)
+			return runProject(cmd, mgr.MigrationsDir, "up", flags)
 		},
 	}
 
@@ -82,7 +85,7 @@ func newUpCmd(projectDir *string) *cobra.Command {
 	return cmd
 }
 
-func newDownCmd(projectDir *string) *cobra.Command {
+func newDownCmd(mgr Manager) *cobra.Command {
 	var steps int
 
 	cmd := &cobra.Command{
@@ -91,7 +94,7 @@ func newDownCmd(projectDir *string) *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := []string{fmt.Sprintf("--steps=%d", steps)}
-			return runProject(cmd, *projectDir, "down", flags)
+			return runProject(cmd, mgr.MigrationsDir, "down", flags)
 		},
 	}
 
@@ -100,59 +103,43 @@ func newDownCmd(projectDir *string) *cobra.Command {
 	return cmd
 }
 
-func newStatusCmd(projectDir *string) *cobra.Command {
+func newStatusCmd(mgr Manager) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "status",
 		Short:        "Show applied and pending migrations",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runProject(cmd, *projectDir, "status", nil)
+			return runProject(cmd, mgr.MigrationsDir, "status", nil)
 		},
 	}
 
 	return cmd
 }
 
-func newDiffCmd(projectDir *string) *cobra.Command {
+func newDiffCmd(mgr Manager) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "diff",
-		Short:        "Inspect differences between models and the database",
+		Short:        "Model ↔ DB diff (read-only)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runProject(cmd, *projectDir, "diff", nil)
+			return runProject(cmd, mgr.MigrationsDir, "diff", nil)
 		},
 	}
 
 	return cmd
 }
 
-func newGenCmd(projectDir *string) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:          "gen",
-		Short:        "Generate models or migration files",
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
-	}
-
-	cmd.AddCommand(newGenModelCmd(projectDir))
-	cmd.AddCommand(newGenMigrationCmd(projectDir))
-
-	return cmd
-}
-
-func newGenModelCmd(projectDir *string) *cobra.Command {
+func newReflectCmd(mgr Manager) *cobra.Command {
 	var dryRun bool
 	var yes bool
 	var tables []string
 
 	cmd := &cobra.Command{
-		Use:          "model",
-		Short:        "Generate or update GORM models from the database schema",
+		Use:          "reflect",
+		Short:        "Reflect DB schema into models (DB → Model)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			subArgs := []string{"model"}
+			subArgs := []string{}
 			if dryRun {
 				subArgs = append(subArgs, "--dry-run")
 			}
@@ -162,7 +149,7 @@ func newGenModelCmd(projectDir *string) *cobra.Command {
 			for _, table := range tables {
 				subArgs = append(subArgs, fmt.Sprintf("--table=%s", table))
 			}
-			return runProject(cmd, *projectDir, "gen", subArgs)
+			return runProject(cmd, mgr.MigrationsDir, "reflect", subArgs)
 		},
 	}
 
@@ -173,31 +160,35 @@ func newGenModelCmd(projectDir *string) *cobra.Command {
 	return cmd
 }
 
-func newGenMigrationCmd(projectDir *string) *cobra.Command {
-	var name string
+func newCreateCmd(mgr Manager) *cobra.Command {
 	var dryRun bool
 	var yes bool
+	var auto bool
 
 	cmd := &cobra.Command{
-		Use:          "migration",
-		Short:        "Generate a Go migration file from model diffs",
+		Use:          "create",
+		Short:        "Generate a migration file from models (Model → Migration File)",
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			subArgs := []string{"migration", fmt.Sprintf("--name=%s", name)}
+		Args:         cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			subArgs := []string{name}
 			if dryRun {
 				subArgs = append(subArgs, "--dry-run")
 			}
 			if yes {
 				subArgs = append(subArgs, "--yes")
 			}
-			return runProject(cmd, *projectDir, "gen", subArgs)
+			if auto {
+				subArgs = append(subArgs, "--auto")
+			}
+			return runProject(cmd, mgr.MigrationsDir, "create", subArgs)
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Descriptive migration name (e.g. add_users_table)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview migration contents without creating a file")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompts")
-	_ = cmd.MarkFlagRequired("name")
+	cmd.Flags().BoolVar(&auto, "auto", false, "Generate from model/DB diff (requires DB adapter)")
 
 	return cmd
 }
@@ -211,10 +202,17 @@ func runProject(cmd *cobra.Command, projectDir, subcommand string, args []string
 	migrationsDir := filepath.Join(absProject, defaultMigrationsDirName)
 	runner := filepath.Join(migrationsDir, defaultRunnerFileName)
 	if _, err := os.Stat(runner); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return ErrNotInitialized
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			altRunner := filepath.Join(absProject, defaultRunnerFileName)
+			if _, errAlt := os.Stat(altRunner); errAlt == nil {
+				migrationsDir = absProject
+				runner = altRunner
+			} else {
+				return ErrNotInitialized
+			}
+		} else {
+			return err
 		}
-		return err
 	}
 
 	goArgs := append([]string{"run", ".", subcommand}, args...)
@@ -224,7 +222,14 @@ func runProject(cmd *cobra.Command, projectDir, subcommand string, args []string
 	proc.Stderr = cmd.ErrOrStderr()
 	proc.Stdin = cmd.InOrStdin()
 	proc.Env = os.Environ()
-	return proc.Run()
+	if err := proc.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func normalizeProjectDir(value string) string {

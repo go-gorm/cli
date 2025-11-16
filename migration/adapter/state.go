@@ -1,4 +1,4 @@
-package runtime
+package adapter
 
 import (
 	"time"
@@ -46,7 +46,7 @@ func (a *DBAdapter) pendingMigrations() ([]Migration, error) {
 	for _, record := range applied {
 		appliedSet[record.Name] = struct{}{}
 	}
-	regs := registeredMigrations()
+	regs := a.registeredMigrations()
 	pending := make([]Migration, 0)
 	for _, mig := range regs {
 		if _, ok := appliedSet[mig.Name]; !ok {
