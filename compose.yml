@@ -4,7 +4,7 @@ services:
     ports:
       - "127.0.0.1:9910:3306"
     environment:
-      - MYSQL_DATABASE=gorm
+      - MYSQL_DATABASE=gorm_cli
       - MYSQL_USER=gorm
       - MYSQL_PASSWORD=gorm
       - MYSQL_RANDOM_ROOT_PASSWORD="yes"
@@ -14,6 +14,6 @@ services:
       - "127.0.0.1:9920:5432"
     environment:
       - TZ=Asia/Shanghai
-      - POSTGRES_DB=gorm
+      - POSTGRES_DB=gorm_cli
       - POSTGRES_USER=gorm
       - POSTGRES_PASSWORD=gorm

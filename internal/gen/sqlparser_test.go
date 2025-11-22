@@ -120,7 +120,7 @@ var methodExpectedLines = map[string][]string{
 
 // TestRenderSQLTemplate
 func TestRenderSQLTemplate(t *testing.T) {
-	const queryFilePath = "../../examples/query.go"
+	const queryFilePath = "../../examples/gen/query.go"
 
 	fset := token.NewFileSet()
 	parsedFile, err := parser.ParseFile(fset, queryFilePath, nil, parser.ParseComments)

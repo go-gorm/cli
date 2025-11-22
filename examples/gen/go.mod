@@ -30,4 +30,4 @@ require (
 	golang.org/x/tools v0.24.1 // indirect
 )
 
-replace gorm.io/cli/gorm => ../
+replace gorm.io/cli/gorm => ../../

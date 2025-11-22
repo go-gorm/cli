@@ -72,6 +72,13 @@ func WithDBAdapter(db *gorm.DB) Option {
 	}
 }
 
+// WithArgs sets the command-line arguments (e.g. os.Args[1:]) the migrator should process.
+func WithArgs(args []string) Option {
+	return func(r *Migrator) {
+		r.args = append([]string(nil), args...)
+	}
+}
+
 // Run executes the migration command, registering the provided migrations and exiting on error.
 func (r *Migrator) Run(migrations []Migration) {
 	for _, adp := range r.adapters {

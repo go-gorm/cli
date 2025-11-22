@@ -39,7 +39,7 @@ func readAllGeneratedGoFiles(t *testing.T, dir string) string {
 }
 
 func TestFilters_Whitelist(t *testing.T) {
-	inputDir, err := filepath.Abs("../../examples/filters/whitelist")
+	inputDir, err := filepath.Abs("../../examples/gen/filters/whitelist")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestFilters_Whitelist(t *testing.T) {
 }
 
 func TestFilters_Blacklist(t *testing.T) {
-	inputDir, err := filepath.Abs("../../examples/filters/blacklist")
+	inputDir, err := filepath.Abs("../../examples/gen/filters/blacklist")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestFilters_Blacklist(t *testing.T) {
 }
 
 func TestFilters_TwoLevel(t *testing.T) {
-	inputDir, err := filepath.Abs("../../examples/filters/twolevel")
+	inputDir, err := filepath.Abs("../../examples/gen/filters/twolevel")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestFilters_TwoLevel(t *testing.T) {
 }
 
 func TestFilters_PatternInclude(t *testing.T) {
-	inputDir, err := filepath.Abs("../../examples/filters/pattern")
+	inputDir, err := filepath.Abs("../../examples/gen/filters/pattern")
 	if err != nil {
 		t.Fatal(err)
 	}

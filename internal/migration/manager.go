@@ -75,6 +75,8 @@ var runnerTemplate = template.Must(template.New("runner").Parse(defaultRunnerTem
 const defaultRunnerTemplate = `package main
 
 import (
+	"os"
+
 	"gorm.io/cli/gorm/migration"
 	"gorm.io/gorm"
 )
@@ -111,6 +113,6 @@ func main() {
 		ModelsDir:     {{printf "%q" .ModelsDir}},
 		MigrationsDir: {{printf "%q" .MigrationsDir}},
 		TableRules:    tablesConfig,
-	}, migration.WithDBAdapter(DB)).Run(migrations)
+	}, migration.WithDBAdapter(DB), migration.WithArgs(os.Args[1:])).Run(migrations)
 }
 `
