@@ -39,7 +39,7 @@ func New() *cobra.Command {
 	cmd.Flags().BoolVarP(&typed, "typed", "t", true, "Generated Typed API")
 	cmd.Flags().StringVarP(&output, "output", "o", defaultOutPath, "Directory to place generated code")
 	cmd.Flags().StringVarP(&input, "input", "i", "", "Path to Go interface file with raw SQL annotations")
-	cmd.MarkFlagRequired("input")
+	cobra.CheckErr(cmd.MarkFlagRequired("input"))
 
 	return cmd
 }
