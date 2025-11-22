@@ -1,27 +1,33 @@
 package migration
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
-	"gorm.io/cli/gorm/migration/adapter"
+	"gorm.io/cli/gorm/internal/migration/adapter"
+	"gorm.io/cli/gorm/internal/project"
 	"gorm.io/gorm"
 )
 
-// Migration is an alias of adapter.Migration for convenience in templates.
-type Migration = adapter.Migration
+type (
+	Migration   = adapter.Migration
+	FieldRule   = adapter.FieldRule
+	TableConfig = adapter.TableConfig
+	TableRule   = adapter.TableRule
+)
 
 // Config configures the migration migrator embedded in generated projects.
 type Config struct {
 	ModelsDir     string
 	MigrationsDir string
-
-	Args []string
+	TableRules    []TableRule
 }
 
 // Option mutates a Migrator configuration during construction.
@@ -30,36 +36,21 @@ type Option func(*Migrator)
 // Migrator executes migration commands using the provided configuration.
 type Migrator struct {
 	cfg      Config
+	args     []string
 	adapters []adapter.Adapter
 }
 
 // New creates a Migrator with sane defaults for missing configuration fields.
 func New(cfg Config, opts ...Option) *Migrator {
+	cfg.ModelsDir = project.ResolveRootPath(cfg.ModelsDir)
+	cfg.MigrationsDir = project.ResolveRootPath(cfg.MigrationsDir)
 	r := &Migrator{cfg: cfg}
-	r.applyDefaults()
 	for _, opt := range opts {
 		if opt != nil {
 			opt(r)
 		}
 	}
 	return r
-}
-
-func (r *Migrator) applyDefaults() {
-	if r.cfg.Args == nil {
-		r.cfg.Args = os.Args[1:]
-	}
-	if r.cfg.ModelsDir == "" {
-		r.cfg.ModelsDir = "models"
-	}
-	if r.cfg.MigrationsDir == "" {
-		r.cfg.MigrationsDir = "migrations"
-	}
-	if wd, err := os.Getwd(); err == nil {
-		if filepath.Base(filepath.Clean(wd)) == r.cfg.MigrationsDir {
-			r.cfg.MigrationsDir = "."
-		}
-	}
 }
 
 // WithDBAdapter injects the DB connection used to build a runtime adapter.
@@ -71,6 +62,7 @@ func WithDBAdapter(db *gorm.DB) Option {
 		adp, err := adapter.NewDBAdapter(db, adapter.Config{
 			ModelsDir:     r.cfg.ModelsDir,
 			MigrationsDir: r.cfg.MigrationsDir,
+			TableRules:    r.cfg.TableRules,
 		})
 		if err != nil {
 			log.Print(err)
@@ -82,18 +74,13 @@ func WithDBAdapter(db *gorm.DB) Option {
 
 // Run executes the migration command, registering the provided migrations and exiting on error.
 func (r *Migrator) Run(migrations []Migration) {
-	for _, m := range migrations {
-		for _, adp := range r.adapters {
-			adp.RegisterMigration(m)
+	for _, adp := range r.adapters {
+		adp.RegisterMigrations(migrations)
+
+		if err := r.run(adp, r.args); err != nil {
+			log.Print(err)
+			os.Exit(1)
 		}
-	}
-	var primary adapter.Adapter
-	if len(r.adapters) > 0 {
-		primary = r.adapters[0]
-	}
-	if err := r.run(primary, r.cfg.Args); err != nil {
-		log.Print(err)
-		os.Exit(1)
 	}
 }
 
@@ -103,20 +90,19 @@ func (r *Migrator) run(adp adapter.Adapter, args []string) error {
 	}
 	cmd := args[0]
 	rest := args[1:]
+
+	if adp == nil && cmd != "create" {
+		return fmt.Errorf("adapter is required for %s", cmd)
+	}
+
 	switch cmd {
 	case "up":
 		return r.runUp(adp, rest)
 	case "down":
 		return r.runDown(adp, rest)
 	case "status":
-		if adp == nil {
-			return fmt.Errorf("adapter is required for status")
-		}
 		return adp.Status(adapter.StatusOptions{})
 	case "diff":
-		if adp == nil {
-			return fmt.Errorf("adapter is required for diff")
-		}
 		return adp.Diff(adapter.DiffOptions{})
 	case "reflect":
 		return r.runReflect(adp, rest)
@@ -128,69 +114,50 @@ func (r *Migrator) run(adp adapter.Adapter, args []string) error {
 }
 
 func (r *Migrator) runReflect(adp adapter.Adapter, args []string) error {
-	if adp == nil {
-		return fmt.Errorf("adapter is required for reflect")
-	}
 	fs := flag.NewFlagSet("reflect", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dryRun := fs.Bool("dry-run", false, "Preview generated code without writing to disk")
 	auto := fs.Bool("yes", false, "Skip confirmation prompts")
-	tables := fs.String("table", "", "Comma-separated tables to include")
+
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	var tableList []string
-	if v := strings.TrimSpace(*tables); v != "" {
-		parts := strings.Split(v, ",")
-		tableList = make([]string, 0, len(parts))
-		for _, p := range parts {
-			if name := strings.TrimSpace(p); name != "" {
-				tableList = append(tableList, name)
-			}
-		}
-	}
+
 	return adp.GenerateModel(adapter.GenerateModelOptions{
 		DryRun:      *dryRun,
 		AutoApprove: *auto,
-		Tables:      tableList,
 	})
 }
 
 func (r *Migrator) runCreate(adp adapter.Adapter, args []string) error {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	name := fs.String("name", "", "Migration name")
 	dryRun := fs.Bool("dry-run", false, "Preview migration contents without creating a file")
 	yes := fs.Bool("yes", false, "Skip confirmation prompts")
 	auto := fs.Bool("auto", false, "Auto-generate from model/DB diff (requires DB adapter)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *name == "" && fs.NArg() > 0 {
-		*name = fs.Arg(0)
-	}
-	if *name == "" {
+	if fs.NArg() == 0 {
 		return fmt.Errorf("migration name is required")
 	}
+	name := fs.Arg(0)
 	if *auto {
 		if adp == nil {
 			return fmt.Errorf("--auto requires a DB adapter")
 		}
 		return adp.GenerateMigration(adapter.GenerateMigrationOptions{
-			Name:        *name,
+			Name:        name,
 			DryRun:      *dryRun,
 			AutoApprove: *yes,
 		})
 	}
-	return r.writeEmptyMigration(*name, *dryRun, *yes)
+	return r.writeEmptyMigration(name, *dryRun, *yes)
 }
 
 func (r *Migrator) writeEmptyMigration(name string, dryRun, yes bool) error {
 	timestamp := time.Now().UTC().Format("20060102150405")
-	slug := slugify(name)
-	if slug == "" {
-		slug = "migration"
-	}
+	slug := project.Slugify(name)
 	filename := fmt.Sprintf("%s_%s.go", timestamp, slug)
 	path := filepath.Join(r.cfg.MigrationsDir, filename)
 	content := renderEmptyMigration(strings.TrimSuffix(filename, ".go"))
@@ -213,41 +180,12 @@ func (r *Migrator) writeEmptyMigration(name string, dryRun, yes bool) error {
 }
 
 func renderEmptyMigration(name string) string {
-	return fmt.Sprintf(`package main
-
-import (
-    "gorm.io/cli/gorm/migration"
-    "gorm.io/gorm"
-)
-
-func init() {
-    register(migration.Migration{
-        Name: "%s",
-        Up: func(tx *gorm.DB) error {
-            // TODO: implement forward migration logic
-            return nil
-        },
-        Down: func(tx *gorm.DB) error {
-            // TODO: implement rollback logic
-            return nil
-        },
-    })
-}
-`, name)
-}
-
-func slugify(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	value = strings.ReplaceAll(value, " ", "_")
-	value = strings.ReplaceAll(value, "-", "_")
-	value = strings.Trim(value, "_")
-	return value
+	var buf bytes.Buffer
+	_ = emptyMigrationTemplate.Execute(&buf, struct{ Name string }{Name: name})
+	return buf.String()
 }
 
 func (r *Migrator) runUp(adp adapter.Adapter, args []string) error {
-	if adp == nil {
-		return fmt.Errorf("adapter is required for up")
-	}
 	fs := flag.NewFlagSet("up", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	limit := fs.Int("limit", 0, "number of migrations to apply")
@@ -258,9 +196,6 @@ func (r *Migrator) runUp(adp adapter.Adapter, args []string) error {
 }
 
 func (r *Migrator) runDown(adp adapter.Adapter, args []string) error {
-	if adp == nil {
-		return fmt.Errorf("adapter is required for down")
-	}
 	fs := flag.NewFlagSet("down", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	steps := fs.Int("steps", 1, "number of migrations to rollback")
@@ -269,3 +204,25 @@ func (r *Migrator) runDown(adp adapter.Adapter, args []string) error {
 	}
 	return adp.Down(adapter.DownOptions{Steps: *steps})
 }
+
+var emptyMigrationTemplate = template.Must(template.New("migration").Parse(`package main
+
+import (
+    "gorm.io/cli/gorm/migration"
+    "gorm.io/gorm"
+)
+
+func init() {
+    register(migration.Migration{
+        Name: "{{.Name}}",
+        Up: func(tx *gorm.DB) error {
+            // TODO: implement forward migration logic
+            return nil
+        },
+        Down: func(tx *gorm.DB) error {
+            // TODO: implement rollback logic
+            return nil
+        },
+    })
+}
+`))

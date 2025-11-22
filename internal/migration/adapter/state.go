@@ -1,11 +1,14 @@
 package adapter
 
 import (
+	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type schemaMigration struct {
-	Name      string    `gorm:"primaryKey;size:255"`
+	Name      string    `gorm:"primaryKey;size:200"`
 	AppliedAt time.Time `gorm:"autoUpdateTime:false"`
 }
 
@@ -13,12 +16,21 @@ func (schemaMigration) TableName() string {
 	return "schema_migrations"
 }
 
-func (a *DBAdapter) recordApplied(name string) error {
-	return a.db.Create(&schemaMigration{Name: name, AppliedAt: time.Now().UTC()}).Error
+func (a *DBAdapter) recordApplied(tx *gorm.DB, name string) error {
+	if len(name) > 150 {
+		return fmt.Errorf("migration name exceeds 150 characters: %s", name)
+	}
+	if tx == nil {
+		tx = a.db
+	}
+	return tx.Create(&schemaMigration{Name: name, AppliedAt: time.Now().UTC()}).Error
 }
 
-func (a *DBAdapter) removeApplied(name string) error {
-	return a.db.Delete(&schemaMigration{Name: name}).Error
+func (a *DBAdapter) removeApplied(tx *gorm.DB, name string) error {
+	if tx == nil {
+		tx = a.db
+	}
+	return tx.Delete(&schemaMigration{Name: name}).Error
 }
 
 func (a *DBAdapter) appliedMigrationsAsc() ([]schemaMigration, error) {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+
+	"gorm.io/cli/gorm/internal/project"
 )
 
 const (
@@ -15,15 +17,14 @@ const (
 	defaultRunnerFileName    = "main.go"
 )
 
-var (
-	// ErrNotInitialized is returned when the migrations folder has not been bootstrapped yet.
-	ErrNotInitialized = errors.New("migration project is not initialized; run 'gorm migrate init'")
-)
+// ErrNotInitialized is returned when the migrations folder has not been bootstrapped yet.
+var ErrNotInitialized = errors.New("migration project is not initialized; run 'gorm migrate init'")
 
 // Manager owns the operations performed by the migration CLI.
 type Manager struct {
 	ModelsDir     string
 	MigrationsDir string
+	GoCmd         string
 }
 
 // InitOptions configures the init command.
@@ -32,7 +33,7 @@ type InitOptions struct {
 }
 
 func (mgr Manager) Init(opts InitOptions) error {
-	migrationsDir := normalizePath(mgr.MigrationsDir)
+	migrationsDir := project.ResolveRootPath(mgr.MigrationsDir)
 	runnerFile := filepath.Join(migrationsDir, defaultRunnerFileName)
 
 	if err := os.MkdirAll(migrationsDir, 0o755); err != nil {
@@ -44,13 +45,6 @@ func (mgr Manager) Init(opts InitOptions) error {
 	}
 
 	return nil
-}
-
-func normalizePath(value string) string {
-	if value == "" {
-		return "."
-	}
-	return filepath.Clean(value)
 }
 
 func writeRunnerFile(path string, force bool, data Manager) error {
@@ -87,6 +81,24 @@ import (
 
 var migrations []migration.Migration
 
+// tablesConfig defines the configuration for model reflection.
+// Each rule matches tables using shell-style patterns.
+var tablesConfig = []migration.TableRule{
+	// {
+	// 	Pattern: "users",
+	// 	Config: migration.TableConfig{
+	// 		OutputPath: "internal/models/user.go",
+	// 		FieldRules: []migration.FieldRule{
+	// 			{Pattern: "users.name", FieldName: "FullName", Tags: map[string]string{"json": "{{.DBName}}"}},
+	// 		},
+	// 	},
+	// },
+	// {
+	// 	Pattern: "audit_*",
+	// 	Exclude: true,
+	// },
+}
+
 func register(m migration.Migration) {
 	migrations = append(migrations, m)
 }
@@ -98,6 +110,7 @@ func main() {
 	migration.New(migration.Config{
 		ModelsDir:     {{printf "%q" .ModelsDir}},
 		MigrationsDir: {{printf "%q" .MigrationsDir}},
+		TableRules:    tablesConfig,
 	}, migration.WithDBAdapter(DB)).Run(migrations)
 }
 `
