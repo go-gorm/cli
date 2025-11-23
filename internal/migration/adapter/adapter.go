@@ -10,6 +10,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -58,8 +59,11 @@ type DownOptions struct {
 // StatusOptions currently holds no fields; defined for future extension.
 type StatusOptions struct{}
 
-// DiffOptions currently holds no fields; defined for future extension.
-type DiffOptions struct{}
+// DiffOptions controls diff output behaviour.
+type DiffOptions struct {
+	GeneratedFile bool
+	Writer        io.Writer
+}
 
 // GenerateModelOptions drives DBAdapter.GenerateModel.
 type GenerateModelOptions struct {
@@ -80,6 +84,7 @@ type FieldRule struct {
 	FieldType string
 	Tags      map[string]string
 	Imports   []string
+	Exclude   bool
 }
 
 type TableConfig struct {
@@ -99,6 +104,7 @@ type Config struct {
 	ModelsDir     string
 	MigrationsDir string
 	TableRules    []TableRule
+	DiffModels    []interface{}
 }
 
 // DBAdapter implements Adapter using a gorm.DB connection.
@@ -229,7 +235,10 @@ func (a *DBAdapter) Status(_ StatusOptions) error {
 }
 
 // Diff prints pending migrations (alias for Status pending section).
-func (a *DBAdapter) Diff(_ DiffOptions) error {
+func (a *DBAdapter) Diff(opts DiffOptions) error {
+	if opts.GeneratedFile {
+		return a.renderDiffModels(opts.Writer)
+	}
 	diff, _, _, err := a.loadSchemaDiff()
 	if err != nil {
 		return err
@@ -393,6 +402,7 @@ func cloneFieldRules(src []FieldRule) []FieldRule {
 			FieldType: v.FieldType,
 			Tags:      maps.Clone(v.Tags),
 			Imports:   append([]string(nil), v.Imports...),
+			Exclude:   v.Exclude,
 		}
 	}
 	return dup
@@ -451,8 +461,11 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 		if _, ok := existingFields[col.Name()]; ok {
 			continue
 		}
-
-		fieldName, goType, tagLiteral, imports, err := a.generateField(a.db.NamingStrategy, table, col, cfg)
+		rule, hasRule := matchFieldRule(cfg.FieldRules, table, col.Name())
+		if hasRule && rule.Exclude {
+			continue
+		}
+		fieldName, goType, tagLiteral, imports, err := a.generateField(a.db.NamingStrategy, table, col, rule, hasRule)
 		if err != nil {
 			return err
 		}
@@ -675,7 +688,12 @@ func (a *DBAdapter) buildStructFields(ns schema.Namer, table string, cols []gorm
 	fieldStrings := make([]string, 0, len(cols))
 
 	for _, col := range cols {
-		fieldName, goType, tagLiteral, newImports, err := a.generateField(ns, table, col, cfg)
+		colName := col.Name()
+		rule, hasRule := matchFieldRule(cfg.FieldRules, table, colName)
+		if hasRule && rule.Exclude {
+			continue
+		}
+		fieldName, goType, tagLiteral, newImports, err := a.generateField(ns, table, col, rule, hasRule)
 		if err != nil {
 			return "", nil, err
 		}
@@ -697,9 +715,8 @@ func (a *DBAdapter) buildStructFields(ns schema.Namer, table string, cols []gorm
 	return strings.Join(fieldStrings, "\n"), importList, nil
 }
 
-func (a *DBAdapter) generateField(ns schema.Namer, table string, col gorm.ColumnType, cfg TableConfig) (fieldName, goType, structTag string, imports []string, err error) {
+func (a *DBAdapter) generateField(ns schema.Namer, table string, col gorm.ColumnType, rule FieldRule, hasRule bool) (fieldName, goType, structTag string, imports []string, err error) {
 	colName := col.Name()
-	rule, hasRule := matchFieldRule(cfg.FieldRules, table, colName)
 
 	fieldName = ns.SchemaName(colName)
 	if hasRule && rule.FieldName != "" {

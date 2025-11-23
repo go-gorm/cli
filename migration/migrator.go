@@ -63,6 +63,7 @@ func WithDBAdapter(db *gorm.DB) Option {
 			ModelsDir:     r.cfg.ModelsDir,
 			MigrationsDir: r.cfg.MigrationsDir,
 			TableRules:    r.cfg.TableRules,
+			DiffModels:    diffModels,
 		})
 		if err != nil {
 			log.Print(err)
@@ -105,7 +106,7 @@ func (r *Migrator) run(adp adapter.Adapter, args []string) error {
 	case "status":
 		return adp.Status(adapter.StatusOptions{})
 	case "diff":
-		return adp.Diff(adapter.DiffOptions{})
+		return r.runDiff(adp, rest)
 	case "reflect":
 		return r.runReflect(adp, rest)
 	case "create":
@@ -129,6 +130,16 @@ func (r *Migrator) runReflect(adp adapter.Adapter, args []string) error {
 		DryRun:      *dryRun,
 		AutoApprove: *auto,
 	})
+}
+
+func (r *Migrator) runDiff(adp adapter.Adapter, args []string) error {
+	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	generated := fs.Bool("generated-file", false, "Output registered diff models as JSON and exit")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return adp.Diff(adapter.DiffOptions{GeneratedFile: *generated, Writer: os.Stdout})
 }
 
 func (r *Migrator) runCreate(adp adapter.Adapter, args []string) error {

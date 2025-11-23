@@ -116,14 +116,29 @@ func newStatusCmd(mgr *Manager) *cobra.Command {
 }
 
 func newDiffCmd(mgr *Manager) *cobra.Command {
+	var generated bool
 	cmd := &cobra.Command{
 		Use:          "diff",
 		Short:        "Model ↔ DB diff (read-only)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return mgr.runRunner(cmd, "diff", nil)
+			path, err := mgr.generateDiffFile()
+			if err != nil {
+				return err
+			}
+			cleanup := cleanupDiffArtifact(path)
+			if cleanup != nil {
+				defer cleanup()
+			}
+			var subArgs []string
+			if generated {
+				subArgs = append(subArgs, "--generated-file")
+			}
+			return mgr.runRunner(cmd, "diff", subArgs)
 		},
 	}
+	cmd.Flags().BoolVar(&generated, "generated-file", false, "internal flag used for diff helper generation")
+	_ = cmd.Flags().MarkHidden("generated-file")
 
 	return cmd
 }
@@ -167,6 +182,7 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			subArgs := []string{name}
+			var cleanup func()
 			if dryRun {
 				subArgs = append(subArgs, "--dry-run")
 			}
@@ -175,6 +191,14 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 			}
 			if auto {
 				subArgs = append(subArgs, "--auto")
+				path, err := mgr.generateDiffFile()
+				if err != nil {
+					return err
+				}
+				cleanup = cleanupDiffArtifact(path)
+			}
+			if cleanup != nil {
+				defer cleanup()
 			}
 			return mgr.runRunner(cmd, "create", subArgs)
 		},
@@ -203,4 +227,16 @@ func (mgr *Manager) runRunner(cmd *cobra.Command, subcommand string, args []stri
 		return err
 	}
 	return nil
+}
+
+func cleanupDiffArtifact(path string) func() {
+	if path == "" {
+		return nil
+	}
+	return func() {
+		if os.Getenv("GORM_KEEP_DIFF_FILE") == "1" {
+			return
+		}
+		_ = os.Remove(path)
+	}
 }

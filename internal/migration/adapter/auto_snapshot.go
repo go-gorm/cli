@@ -91,7 +91,7 @@ func convertIndexes(indexes []gorm.Index, sch *schema.Schema) []*schema.Index {
 	result := make([]*schema.Index, 0, len(indexes))
 	for _, idx := range indexes {
 		name := idx.Name()
-		if _, ok := idx.PrimaryKey(); ok && PrimaryKey {
+		if pk, ok := idx.PrimaryKey(); ok && pk {
 			continue
 		}
 
