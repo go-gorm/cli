@@ -230,18 +230,15 @@ func (a *DBAdapter) Status(_ StatusOptions) error {
 
 // Diff prints pending migrations (alias for Status pending section).
 func (a *DBAdapter) Diff(_ DiffOptions) error {
-	pending, err := a.pendingMigrations()
+	diff, _, _, err := a.loadSchemaDiff()
 	if err != nil {
 		return err
 	}
-	if len(pending) == 0 {
+	if diff.Empty() {
 		fmt.Fprintln(os.Stdout, "Models match the database schema")
 		return nil
 	}
-	fmt.Fprintln(os.Stdout, "Pending migrations detected:")
-	for _, mig := range pending {
-		fmt.Fprintf(os.Stdout, "- %s\n", mig.Name)
-	}
+	writeSchemaDiff(os.Stdout, diff)
 	return nil
 }
 

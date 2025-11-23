@@ -32,6 +32,8 @@ func RunMigrateTests(t *testing.T, projectDir string, args ...string) {
 	expected = filepath.Join(projectDir, "outputs", "models")
 	actual = filepath.Join(projectDir, "models")
 	DiffDirs(t, expected, actual)
+
+	runMigrateDiff(t, projectDir)
 }
 
 func runMigrateInit(t *testing.T, projectDir string) {
@@ -45,6 +47,27 @@ func runMigrateReflect(t *testing.T, projectDir string) {
 	t.Helper()
 	if out, err := execMigrate(t, projectDir, "reflect"); err != nil {
 		t.Fatalf("migrate reflect failed: %v\n%s", err, out)
+	}
+}
+
+func runMigrateDiff(t *testing.T, projectDir string) {
+	t.Helper()
+	out, err := execMigrate(t, projectDir, "diff")
+	if err != nil {
+		t.Fatalf("migrate diff failed: %v\n%s", err, out)
+	}
+	expected := filepath.Join(projectDir, "outputs", "diff", "matching.txt")
+	assertEqualFile(t, expected, out)
+}
+
+func assertEqualFile(t *testing.T, expectedPath, actual string) {
+	t.Helper()
+	data, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("read expected output %s: %v", expectedPath, err)
+	}
+	if strings.TrimRight(actual, "\n") != strings.TrimRight(string(data), "\n") {
+		t.Fatalf("unexpected diff output:\nexpected:\n%s\nactual:\n%s", string(data), actual)
 	}
 }
 
