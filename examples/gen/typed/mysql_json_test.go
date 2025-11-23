@@ -15,7 +15,7 @@ import (
 // setupMySQLTestDB opens a MySQL connection using MYSQL_DSN and migrates schemas.
 func setupMySQLTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "gorm:gorm@tcp(127.0.0.1:9910)/gorm?parseTime=true&charset=utf8mb4&loc=Local"
+	dsn := "gorm:gorm@tcp(127.0.0.1:9910)/gorm_cli?parseTime=true&charset=utf8mb4&loc=Local"
 	if os.Getenv("MYSQL_DSN") != "" {
 		dsn = os.Getenv("MYSQL_DSN")
 	}

@@ -75,44 +75,41 @@ var runnerTemplate = template.Must(template.New("runner").Parse(defaultRunnerTem
 const defaultRunnerTemplate = `package main
 
 import (
-	"os"
-
 	"gorm.io/cli/gorm/migration"
 	"gorm.io/gorm"
 )
 
-var migrations []migration.Migration
-
-// tablesConfig defines the configuration for model reflection.
-// Each rule matches tables using shell-style patterns.
-var tablesConfig = []migration.TableRule{
-	// {
-	// 	Pattern: "users",
-	// 	Config: migration.TableConfig{
-	// 		OutputPath: "internal/models/user.go",
-	// 		FieldRules: []migration.FieldRule{
-	// 			{Pattern: "users.name", FieldName: "FullName", Tags: map[string]string{"json": "{{.DBName}}"}},
-	// 		},
-	// 	},
-	// },
-	// {
-	// 	Pattern: "audit_*",
-	// 	Exclude: true,
-	// },
-}
+var (
+	DB         *gorm.DB
+	migrations []migration.Migration
+	// tablesRules defines the configuration for model reflection.
+	// Each rule matches tables using shell-style patterns.
+	tablesRules = []migration.TableRule{
+		// {
+		// 	 Pattern: "users",
+		// 	 Config: migration.TableConfig{
+		// 		OutputPath: "internal/models/user.go",
+		// 		FieldRules: []migration.FieldRule{
+		// 			{Pattern: "name", FieldName: "FullName", Tags: map[string]string{"json": "{{"{{"}}.DBName{{"}}"}}"}},
+		// 		},
+		// 	 },
+		// },
+		// {
+		// 	Pattern: "audit_*",
+		// 	Exclude: true,
+		// },
+	}
+)
 
 func register(m migration.Migration) {
 	migrations = append(migrations, m)
 }
 
 func main() {
-	// FIXME initialize your gorm DB connection here
-	var DB *gorm.DB
-
 	migration.New(migration.Config{
 		ModelsDir:     {{printf "%q" .ModelsDir}},
 		MigrationsDir: {{printf "%q" .MigrationsDir}},
-		TableRules:    tablesConfig,
-	}, migration.WithDBAdapter(DB), migration.WithArgs(os.Args[1:])).Run(migrations)
+		TableRules:    tablesRules,
+	}, migration.WithDBAdapter(DB)).Run(migrations)
 }
 `

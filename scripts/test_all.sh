@@ -8,9 +8,6 @@ if [ -z "${GOCACHE:-}" ]; then
 fi
 mkdir -p "$GOCACHE"
 
-export MYSQL_DSN='gorm:gorm@tcp(127.0.0.1:9910)/gorm?parseTime=true&charset=utf8mb4&loc=Local'
-export POSTGRES_DSN='user=gorm password=gorm dbname=gorm host=localhost port=9920 sslmode=disable TimeZone=Asia/Shanghai'
-
 echo "Running root module tests..." >&2
 go test -count=1 ./...
 
@@ -24,19 +21,17 @@ while IFS= read -r go_mod; do
   )
 done < <(find examples -name go.mod -print | sort)
 
-reflect_example_project() {
+run_migrate_example_tests() {
   local dir="$1"
-  echo "Running migrate reflect for $dir..." >&2
-  go run . migrate reflect --migrations "$dir/migrations" --yes >/dev/null
-  if ! git diff --quiet -- "$dir/models"; then
-    echo "Model drift detected in $dir/models" >&2
-    git --no-pager diff -- "$dir/models" >&2
-    exit 1
-  fi
+  echo "Running migrate tests for $dir..." >&2
+  (
+    cd "$dir"
+    go test -count=1 ./...
+  )
 }
 
 for project in examples/migrate/sqlite examples/migrate/mysql examples/migrate/postgres; do
-  reflect_example_project "$project"
+  run_migrate_example_tests "$project"
 done
 
 echo "Done." >&2

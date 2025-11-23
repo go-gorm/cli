@@ -266,7 +266,11 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 		// Determine output path
 		var path string
 		if finalConfig.OutputPath != "" {
-			path = finalConfig.OutputPath
+			if filepath.IsAbs(finalConfig.OutputPath) {
+				path = finalConfig.OutputPath
+			} else {
+				path = filepath.Join(project.Root(), finalConfig.OutputPath)
+			}
 		} else {
 			path = filepath.Join(modelDir, fmt.Sprintf("%s.go", project.Slugify(tableName)))
 		}
