@@ -347,7 +347,7 @@ func TestGeneratedModels_FieldTypes(t *testing.T) {
 		_ field.Time                  = generated.User.Birthday
 		_ field.Field[sql.NullInt64]  = generated.User.Score
 		_ field.Time                  = generated.User.LastLogin
-		_ field.Number[int]           = generated.User.CompanyID
+		_ field.Number[uint]          = generated.User.CompanyID
 		_ field.Number[uint]          = generated.User.ManagerID
 		_ field.String                = generated.User.Role
 		_ field.Bool                  = generated.User.IsAdult
@@ -390,8 +390,8 @@ func TestGeneratedModels_FieldTypes(t *testing.T) {
 		_ field.String                = generated.Toy.OwnerType
 
 		// Company
-		_ field.Number[int] = generated.Company.ID
-		_ field.String      = generated.Company.Name
+		_ field.Number[uint] = generated.Company.ID
+		_ field.String       = generated.Company.Name
 
 		// Language
 		_ field.String = generated.Language.Code

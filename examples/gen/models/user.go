@@ -27,7 +27,7 @@ type User struct {
 	Account    Account
 	Pets       []*Pet
 	Toys       []Toy `gorm:"polymorphic:Owner"`
-	CompanyID  *int
+	CompanyID  *uint
 	Company    Company
 	ManagerID  *uint
 	Manager    *User
@@ -63,7 +63,7 @@ type Toy struct {
 }
 
 type Company struct {
-	ID   int
+	ID   uint
 	Name string
 }
 

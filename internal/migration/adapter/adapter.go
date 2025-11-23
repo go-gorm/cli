@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	astutil "golang.org/x/tools/go/ast/astutil"
 	importsutil "golang.org/x/tools/imports"
 	"gorm.io/cli/gorm/internal/project"
 	"gorm.io/cli/gorm/internal/utils"
@@ -280,13 +281,21 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 			outputPkg = pkg
 		}
 
-		// If file exists, attempt to merge. Otherwise, create new.
-		if _, err := os.Stat(path); err == nil && !opts.AutoApprove { // Do not merge in auto-approve mode
+		// If file exists, attempt to merge/append before overwriting.
+		if _, err := os.Stat(path); err == nil {
 			err := a.mergeModelChanges(path, tableName, structName, finalConfig, opts)
 			if err == nil {
 				continue // Successfully merged or up-to-date
 			}
-			fmt.Fprintf(os.Stderr, "Could not merge changes for %s, falling back to overwrite: %v\n", path, err)
+			if errors.Is(err, errStructNotFound) {
+				appendErr := a.appendModelDefinition(ns, path, tableName, structName, finalConfig, opts)
+				if appendErr == nil {
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "Could not append model %s to %s, falling back to overwrite: %v\n", structName, path, appendErr)
+			} else {
+				fmt.Fprintf(os.Stderr, "Could not merge changes for %s, falling back to overwrite: %v\n", path, err)
+			}
 			// Fallback to overwrite logic below
 		}
 
@@ -392,9 +401,15 @@ func cloneFieldRules(src []FieldRule) []FieldRule {
 	return dup
 }
 
+var errStructNotFound = errors.New("struct not found")
+
 func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableConfig, opts GenerateModelOptions) error {
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read existing model file %s: %w", path, err)
+	}
+	node, err := parser.ParseFile(fset, path, original, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("failed to parse existing model file %s: %w", path, err)
 	}
@@ -412,7 +427,7 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 	})
 
 	if structType == nil {
-		return fmt.Errorf("struct %s not found", structName)
+		return fmt.Errorf("%w: %s", errStructNotFound, structName)
 	}
 
 	// Map existing fields by DB column name
@@ -487,7 +502,10 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 		return fmt.Errorf("failed to format updated model code: %w", err)
 	}
 
-	fmt.Fprintf(os.Stdout, "--- Proposed changes for %s ---\n%s\n--- End of changes ---\n", path, buf.String())
+	utils.PrintDiff(path, original, buf.Bytes())
+	if opts.DryRun {
+		return nil
+	}
 
 	ok, err := utils.ConfirmWrite(path, opts.AutoApprove)
 	if err != nil {
@@ -499,6 +517,64 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 	}
 
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stdout, "Model updated: %s\n", path)
+	return nil
+}
+
+func (a *DBAdapter) appendModelDefinition(ns schema.Namer, path, table, structName string, cfg TableConfig, opts GenerateModelOptions) error {
+	cols, err := a.db.Migrator().ColumnTypes(table)
+	if err != nil {
+		return fmt.Errorf("get column types for %s: %w", table, err)
+	}
+
+	fields, imports, err := a.buildStructFields(ns, table, cols, cfg)
+	if err != nil {
+		return err
+	}
+
+	fset := token.NewFileSet()
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read existing model file %s: %w", path, err)
+	}
+	node, err := parser.ParseFile(fset, path, original, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("failed to parse existing model file %s: %w", path, err)
+	}
+	for _, imp := range imports {
+		if imp == "" {
+			continue
+		}
+		astutil.AddImport(fset, node, imp)
+	}
+	var existing bytes.Buffer
+	if err := format.Node(&existing, fset, node); err != nil {
+		return fmt.Errorf("failed to format existing model code: %w", err)
+	}
+
+	snippet := renderModelStruct(structName, table, fields)
+	trimmed := bytes.TrimRight(existing.Bytes(), "\n")
+	combined := append(trimmed, []byte("\n\n"+snippet)...)
+	formatted, err := importsutil.Process(path, combined, nil)
+	if err != nil {
+		return fmt.Errorf("format appended model %s: %w", path, err)
+	}
+
+	utils.PrintDiff(path, original, formatted)
+	if opts.DryRun {
+		return nil
+	}
+	ok, err := utils.ConfirmWrite(path, opts.AutoApprove)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		fmt.Fprintf(os.Stdout, "Skipped %s\n", path)
+		return nil
+	}
+	if err := os.WriteFile(path, formatted, 0o644); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stdout, "Model updated: %s\n", path)

@@ -168,7 +168,7 @@ func TestProcessStructType(t *testing.T) {
 			{Name: "Account", DBName: "account", GoType: "Account"},
 			{Name: "Pets", DBName: "pets", GoType: "[]*Pet"},
 			{Name: "Toys", DBName: "toys", GoType: "[]Toy"},
-			{Name: "CompanyID", DBName: "company_id", GoType: "*int"},
+			{Name: "CompanyID", DBName: "company_id", GoType: "*uint"},
 			{Name: "Company", DBName: "company", GoType: "Company"},
 			{Name: "ManagerID", DBName: "manager_id", GoType: "*uint"},
 			{Name: "Manager", DBName: "manager", GoType: "*User"},

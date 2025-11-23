@@ -25,7 +25,7 @@ var User = struct {
 	Account    field.Struct[models.Account]
 	Pets       field.Slice[models.Pet]
 	Toys       field.Slice[models.Toy]
-	CompanyID  field.Number[int]
+	CompanyID  field.Number[uint]
 	Company    field.Struct[models.Company]
 	ManagerID  field.Number[uint]
 	Manager    field.Struct[models.User]
@@ -49,7 +49,7 @@ var User = struct {
 	Account:    field.Struct[models.Account]{}.WithName("Account"),
 	Pets:       field.Slice[models.Pet]{}.WithName("Pets"),
 	Toys:       field.Slice[models.Toy]{}.WithName("Toys"),
-	CompanyID:  field.Number[int]{}.WithColumn("company_id"),
+	CompanyID:  field.Number[uint]{}.WithColumn("company_id"),
 	Company:    field.Struct[models.Company]{}.WithName("Company"),
 	ManagerID:  field.Number[uint]{}.WithColumn("manager_id"),
 	Manager:    field.Struct[models.User]{}.WithName("Manager"),
@@ -119,10 +119,10 @@ var Toy = struct {
 }
 
 var Company = struct {
-	ID   field.Number[int]
+	ID   field.Number[uint]
 	Name field.String
 }{
-	ID:   field.Number[int]{}.WithColumn("id"),
+	ID:   field.Number[uint]{}.WithColumn("id"),
 	Name: field.String{}.WithColumn("name"),
 }
 
