@@ -1,4 +1,4 @@
-package migration
+package adapter
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/format"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,8 @@ import (
 	"golang.org/x/tools/go/packages"
 	"gorm.io/cli/gorm/internal/project"
 )
+
+const diffHelperFile = "gorm_generated_diff_models_helper.go"
 
 type modelStruct struct {
 	PackagePath string
@@ -36,56 +39,37 @@ type diffTemplateData struct {
 	Targets []diffTarget
 }
 
-const diffHelperFile = "gorm_generated_diff_models_helper.go"
-
-func (mgr Manager) generateDiffFile() (string, error) {
-	structs, err := collectModelStructs(mgr.ModelsDir)
+func (a *DBAdapter) renderDiffHelper(w io.Writer) error {
+	structs, err := a.collectDiffModelStructs()
 	if err != nil {
-		return "", err
+		return err
 	}
-	data := buildDiffTemplateData(structs)
-	source, err := renderDiffFile(data)
+	source, err := renderDiffFile(structs)
 	if err != nil {
-		return "", err
+		return err
 	}
-	migrationsDir := project.ResolveRootPath(mgr.MigrationsDir)
-	if err := os.MkdirAll(migrationsDir, 0o755); err != nil {
-		return "", fmt.Errorf("prepare migrations dir: %w", err)
+	if w == nil {
+		w = os.Stdout
 	}
-	path := filepath.Join(migrationsDir, diffHelperFile)
-	return path, os.WriteFile(path, []byte(source), 0o644)
+	_, err = io.WriteString(w, source)
+	return err
 }
 
-func collectModelStructs(modelsDir string) ([]modelStruct, error) {
+func (a *DBAdapter) collectDiffModelStructs() ([]modelStruct, error) {
 	root := project.Root()
 	if root == "" {
 		return nil, fmt.Errorf("unable to determine project root")
 	}
-	dir := project.ResolveRootPath(modelsDir)
-	if info, err := os.Stat(dir); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("stat models dir: %w", err)
-	} else if !info.IsDir() {
-		return nil, fmt.Errorf("models directory must be a folder: %s", dir)
-	}
-	rel, err := filepath.Rel(root, dir)
-	if err != nil {
-		return nil, fmt.Errorf("models directory must reside within the module root: %w", err)
-	}
-	rel = filepath.ToSlash(rel)
-	pattern := "./" + rel
-	if rel == "." {
-		pattern = "./..."
-	} else {
-		pattern += "/..."
+	modelsDir := project.ResolveRootPath(a.cfg.ModelsDir)
+	patterns := collectModelPatterns(root, modelsDir, newTableRuleResolver(a.cfg.TableRules))
+	if len(patterns) == 0 {
+		return nil, nil
 	}
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedFiles,
 		Dir:  root,
 	}
-	pkgs, err := packages.Load(cfg, pattern)
+	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return nil, fmt.Errorf("load model packages: %w", err)
 	}
@@ -115,13 +99,12 @@ func collectModelStructs(modelsDir string) ([]modelStruct, error) {
 					if _, ok := ts.Type.(*ast.StructType); !ok {
 						continue
 					}
-					name := ts.Name.Name
-					key := pkg.PkgPath + "." + name
-					if _, ok := seen[key]; ok {
+					key := pkg.PkgPath + "." + ts.Name.Name
+					if _, exists := seen[key]; exists {
 						continue
 					}
 					seen[key] = struct{}{}
-					structs = append(structs, modelStruct{PackagePath: pkg.PkgPath, TypeName: name})
+					structs = append(structs, modelStruct{PackagePath: pkg.PkgPath, TypeName: ts.Name.Name})
 				}
 			}
 		}
@@ -133,6 +116,53 @@ func collectModelStructs(modelsDir string) ([]modelStruct, error) {
 		return structs[i].PackagePath < structs[j].PackagePath
 	})
 	return structs, nil
+}
+
+func collectModelPatterns(root, modelsDir string, resolver tableRuleResolver) []string {
+	patterns := make(map[string]struct{})
+	dirs := resolver.modelDirectories(modelsDir)
+	for _, dir := range dirs {
+		if rel := relativePattern(root, dir); rel != "" {
+			patterns[rel] = struct{}{}
+		}
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(patterns))
+	for pattern := range patterns {
+		result = append(result, pattern)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func relativePattern(root, path string) string {
+	if path == "" {
+		return ""
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." {
+		return "./..."
+	}
+	return "./" + strings.TrimSuffix(rel, "/") + "/..."
+}
+
+func renderDiffFile(structs []modelStruct) (string, error) {
+	data := buildDiffTemplateData(structs)
+	var buf bytes.Buffer
+	if err := diffFileTemplate.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("render diff helper: %w", err)
+	}
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		return "", fmt.Errorf("format diff helper: %w", err)
+	}
+	return string(formatted), nil
 }
 
 func buildDiffTemplateData(structs []modelStruct) diffTemplateData {
@@ -149,18 +179,6 @@ func buildDiffTemplateData(structs []modelStruct) diffTemplateData {
 		targets = append(targets, diffTarget{Alias: alias, TypeName: st.TypeName})
 	}
 	return diffTemplateData{Imports: imports, Targets: targets}
-}
-
-func renderDiffFile(data diffTemplateData) (string, error) {
-	var buf bytes.Buffer
-	if err := diffFileTemplate.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("render diff helper: %w", err)
-	}
-	formatted, err := format.Source(buf.Bytes())
-	if err != nil {
-		return "", fmt.Errorf("format diff helper: %w", err)
-	}
-	return string(formatted), nil
 }
 
 var diffFileTemplate = template.Must(template.New("diff-helper").Parse(`// Code generated by gorm migrate diff; DO NOT EDIT.

@@ -1,6 +1,6 @@
 # GORM Migration CLI
 
-GORM provides a new migration workflow based on **schema diffing**.
+GORM provides a new migration workflow based on model/schema diffing
 It supports generating models from a database, generating migration files from models,
 inspecting differences, and applying migrations safely.
 

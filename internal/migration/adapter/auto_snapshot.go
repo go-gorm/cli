@@ -33,10 +33,12 @@ func (a *DBAdapter) snapshotDatabase() (map[string]*TableSchema, error) {
 			FieldsByDBName: make(map[string]*schema.Field, len(columns)),
 		}
 
+		columnTypes := make(map[string]gorm.ColumnType, len(columns))
 		for _, column := range columns {
 			field := columnTypeToField(column, sch, ns)
 			sch.Fields = append(sch.Fields, field)
 			sch.FieldsByDBName[field.DBName] = field
+			columnTypes[strings.ToLower(field.DBName)] = column
 		}
 
 		gormIndexes, idxErr := a.db.Migrator().GetIndexes(table)
@@ -44,8 +46,9 @@ func (a *DBAdapter) snapshotDatabase() (map[string]*TableSchema, error) {
 			return nil, fmt.Errorf("indexes for %s: %w", table, idxErr)
 		}
 		result[strings.ToLower(table)] = &TableSchema{
-			Schema:  sch,
-			Indexes: convertIndexes(gormIndexes, sch),
+			Schema:      sch,
+			Indexes:     convertIndexes(gormIndexes, sch),
+			ColumnTypes: columnTypes,
 		}
 	}
 	return result, nil

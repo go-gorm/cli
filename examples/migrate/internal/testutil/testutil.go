@@ -9,8 +9,18 @@ import (
 	"testing"
 )
 
-// DiffDirs runs a recursive unified diff between the expected and actual directories.
-func DiffDirs(t *testing.T, expected, actual string) {
+func RunMigrateTests(t *testing.T, projectDir string, args ...string) {
+	t.Helper()
+
+	runMigrateInit(t, projectDir)
+
+	runMigrateReflect(t, projectDir)
+
+	runMigrateDiff(t, projectDir)
+}
+
+// diffFiles runs a recursive unified diff between the expected and actual directories.
+func diffFiles(t *testing.T, expected, actual string) {
 	t.Helper()
 	cmd := exec.Command("diff", "-u", "-r", "--new-file", expected, actual)
 	var buf bytes.Buffer
@@ -21,26 +31,14 @@ func DiffDirs(t *testing.T, expected, actual string) {
 	}
 }
 
-func RunMigrateTests(t *testing.T, projectDir string, args ...string) {
-	t.Helper()
-
-	expected := filepath.Join(projectDir, "outputs", "migrations", "main.go")
-	actual := filepath.Join(projectDir, "migrations", "main.go")
-	DiffDirs(t, expected, actual)
-
-	runMigrateReflect(t, projectDir)
-	expected = filepath.Join(projectDir, "outputs", "models")
-	actual = filepath.Join(projectDir, "models")
-	DiffDirs(t, expected, actual)
-
-	runMigrateDiff(t, projectDir)
-}
-
 func runMigrateInit(t *testing.T, projectDir string) {
 	t.Helper()
 	if out, err := execMigrate(t, projectDir, "init", "--force"); err != nil {
 		t.Fatalf("migrate init failed: %v\n%s", err, out)
 	}
+	expected := filepath.Join(projectDir, "outputs", "migrations", "main.go")
+	actual := filepath.Join(projectDir, "migrations", "main.go")
+	diffFiles(t, expected, actual)
 }
 
 func runMigrateReflect(t *testing.T, projectDir string) {
@@ -48,6 +46,9 @@ func runMigrateReflect(t *testing.T, projectDir string) {
 	if out, err := execMigrate(t, projectDir, "reflect"); err != nil {
 		t.Fatalf("migrate reflect failed: %v\n%s", err, out)
 	}
+	expected := filepath.Join(projectDir, "outputs", "models")
+	actual := filepath.Join(projectDir, "models")
+	diffFiles(t, expected, actual)
 }
 
 func runMigrateDiff(t *testing.T, projectDir string) {

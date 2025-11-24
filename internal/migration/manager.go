@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"text/template"
 
@@ -15,6 +16,7 @@ const (
 	defaultModelsDirName     = "models"
 	defaultMigrationsDirName = "migrations"
 	defaultRunnerFileName    = "main.go"
+	diffHelperFile           = "gorm_generated_diff_models_helper.go"
 )
 
 // ErrNotInitialized is returned when the migrations folder has not been bootstrapped yet.
@@ -113,3 +115,20 @@ func main() {
 	}, migration.WithDBAdapter(DB)).Run(migrations)
 }
 `
+
+func (mgr Manager) generateDiffFile() (string, error) {
+	migrationsDir := project.ResolveRootPath(mgr.MigrationsDir)
+	cmd := exec.Command(mgr.GoCmd, "run", ".", "diff", "--generated-file")
+	cmd.Dir = migrationsDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("generate diff helper: %v\n%s", err, stderr.String())
+	}
+	path := filepath.Join(migrationsDir, diffHelperFile)
+	if err := os.WriteFile(path, stdout.Bytes(), 0o644); err != nil {
+		return "", fmt.Errorf("write diff helper: %w", err)
+	}
+	return path, nil
+}

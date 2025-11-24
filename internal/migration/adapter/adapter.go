@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -237,7 +236,7 @@ func (a *DBAdapter) Status(_ StatusOptions) error {
 // Diff prints pending migrations (alias for Status pending section).
 func (a *DBAdapter) Diff(opts DiffOptions) error {
 	if opts.GeneratedFile {
-		return a.renderDiffModels(opts.Writer)
+		return a.renderDiffHelper(opts.Writer)
 	}
 	diff, _, _, err := a.loadSchemaDiff()
 	if err != nil {
@@ -352,60 +351,16 @@ func (a *DBAdapter) resolveTableConfigs() (map[string]TableConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	resolver := newTableRuleResolver(a.cfg.TableRules)
 	configs := make(map[string]TableConfig)
 	for _, table := range tables {
-		cfg, include := buildConfigForTable(table, a.cfg.TableRules)
+		cfg, include := resolver.ConfigForTable(table)
 		if !include {
 			continue
 		}
 		configs[table] = cfg
 	}
 	return configs, nil
-}
-
-func buildConfigForTable(table string, rules []TableRule) (TableConfig, bool) {
-	var finalCfg TableConfig
-	include := true
-	foundRule := false
-	for _, rule := range rules {
-		if rule.Pattern == "" {
-			continue
-		}
-		ok, err := filepath.Match(rule.Pattern, table)
-		if err != nil || !ok {
-			continue
-		}
-		foundRule = true
-		if rule.Exclude {
-			include = false
-			break
-		}
-		if len(rule.Config.FieldRules) > 0 {
-			finalCfg.FieldRules = append(finalCfg.FieldRules, cloneFieldRules(rule.Config.FieldRules)...)
-		}
-		if rule.Config.OutputPath != "" {
-			finalCfg.OutputPath = rule.Config.OutputPath
-		}
-	}
-	if !foundRule {
-		return TableConfig{}, true
-	}
-	return finalCfg, include
-}
-
-func cloneFieldRules(src []FieldRule) []FieldRule {
-	dup := make([]FieldRule, len(src))
-	for i, v := range src {
-		dup[i] = FieldRule{
-			Pattern:   v.Pattern,
-			FieldName: v.FieldName,
-			FieldType: v.FieldType,
-			Tags:      maps.Clone(v.Tags),
-			Imports:   append([]string(nil), v.Imports...),
-			Exclude:   v.Exclude,
-		}
-	}
-	return dup
 }
 
 var errStructNotFound = errors.New("struct not found")
@@ -457,11 +412,12 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 	// Find and generate new fields
 	var newFields []*ast.Field
 	newImports := make(map[string]struct{})
+	ruleMatcher := newFieldRuleMatcher(cfg.FieldRules)
 	for _, col := range cols {
 		if _, ok := existingFields[col.Name()]; ok {
 			continue
 		}
-		rule, hasRule := matchFieldRule(cfg.FieldRules, table, col.Name())
+		rule, hasRule := ruleMatcher.match(table, col.Name())
 		if hasRule && rule.Exclude {
 			continue
 		}
@@ -663,33 +619,14 @@ func (a *DBAdapter) migrationByName(name string) (Migration, bool) {
 	return m, ok
 }
 
-func matchFieldRule(rules []FieldRule, table, column string) (FieldRule, bool) {
-	full := table + "." + column
-	for _, rule := range rules {
-		pattern := strings.TrimSpace(rule.Pattern)
-		if pattern == "" {
-			pattern = full
-		}
-		if pattern == full || pattern == column {
-			return rule, true
-		}
-		if matched, _ := filepath.Match(pattern, full); matched {
-			return rule, true
-		}
-		if matched, _ := filepath.Match(pattern, column); matched {
-			return rule, true
-		}
-	}
-	return FieldRule{}, false
-}
-
 func (a *DBAdapter) buildStructFields(ns schema.Namer, table string, cols []gorm.ColumnType, cfg TableConfig) (string, []string, error) {
 	imports := make(map[string]struct{})
 	fieldStrings := make([]string, 0, len(cols))
+	matcher := newFieldRuleMatcher(cfg.FieldRules)
 
 	for _, col := range cols {
 		colName := col.Name()
-		rule, hasRule := matchFieldRule(cfg.FieldRules, table, colName)
+		rule, hasRule := matcher.match(table, colName)
 		if hasRule && rule.Exclude {
 			continue
 		}

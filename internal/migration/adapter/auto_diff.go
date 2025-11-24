@@ -4,10 +4,18 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
+
+var regFullDataType = regexp.MustCompile(`\D*(\d+)\D?`)
+
+const ignoreIndexDiffs = true
 
 func (a *DBAdapter) loadSchemaDiff() (SchemaDiffResult, map[string]*TableSchema, map[string]*TableSchema, error) {
 	models, err := a.collectModelSchemas()
@@ -20,23 +28,24 @@ func (a *DBAdapter) loadSchemaDiff() (SchemaDiffResult, map[string]*TableSchema,
 		return SchemaDiffResult{}, nil, nil, err
 	}
 	dbSchemas = a.applyDiffTableRules(dbSchemas)
-	return diffSchemas(models, dbSchemas), models, dbSchemas, nil
+	return diffSchemas(models, dbSchemas, a.columnComparator()), models, dbSchemas, nil
 }
 
 func (a *DBAdapter) applyDiffTableRules(schemas map[string]*TableSchema) map[string]*TableSchema {
 	if len(a.cfg.TableRules) == 0 || len(schemas) == 0 {
 		return schemas
 	}
+	resolver := newTableRuleResolver(a.cfg.TableRules)
 	filtered := make(map[string]*TableSchema, len(schemas))
 	for _, table := range schemas {
 		if table == nil || table.Schema == nil || table.Schema.Table == "" {
 			continue
 		}
-		cfg, include := buildConfigForTable(table.Schema.Table, a.cfg.TableRules)
+		cfg, include := resolver.ConfigForTable(table.Schema.Table)
 		if !include {
 			continue
 		}
-		filteredSchema := filterTableSchemaForDiff(table, cfg.FieldRules)
+		filteredSchema := applyFieldRulesToSchema(table, newFieldRuleMatcher(cfg.FieldRules))
 		if filteredSchema == nil {
 			continue
 		}
@@ -45,126 +54,21 @@ func (a *DBAdapter) applyDiffTableRules(schemas map[string]*TableSchema) map[str
 	return filtered
 }
 
-func filterTableSchemaForDiff(table *TableSchema, rules []FieldRule) *TableSchema {
-	if table == nil || table.Schema == nil {
+type columnComparator func(modelField, dbField *schema.Field, columnType gorm.ColumnType) bool
+
+func (a *DBAdapter) columnComparator() columnComparator {
+	if a == nil || a.db == nil {
 		return nil
 	}
-	excluded := identifyExcludedColumns(table.Schema.Table, table.Schema.Fields, rules)
-	if len(excluded) == 0 {
-		return table
-	}
-	newSchema := *table.Schema
-	newSchema.Fields = make([]*schema.Field, 0, len(table.Schema.Fields)-len(excluded))
-	newSchema.FieldsByName = make(map[string]*schema.Field, len(table.Schema.Fields)-len(excluded))
-	newSchema.FieldsByDBName = make(map[string]*schema.Field, len(table.Schema.Fields)-len(excluded))
-	newSchema.DBNames = make([]string, 0, len(table.Schema.DBNames))
-	newSchema.PrimaryFields = nil
-	newSchema.PrimaryFieldDBNames = nil
-	newSchema.PrioritizedPrimaryField = nil
-	for _, field := range table.Schema.Fields {
-		if _, skip := excluded[field.DBName]; skip {
-			continue
+	return func(modelField, _ *schema.Field, columnType gorm.ColumnType) bool {
+		if modelField == nil {
+			return columnType == nil
 		}
-		newSchema.Fields = append(newSchema.Fields, field)
-		newSchema.FieldsByName[field.Name] = field
-		newSchema.FieldsByDBName[field.DBName] = field
-		newSchema.DBNames = append(newSchema.DBNames, field.DBName)
-		if field.PrimaryKey {
-			newSchema.PrimaryFields = append(newSchema.PrimaryFields, field)
-			newSchema.PrimaryFieldDBNames = append(newSchema.PrimaryFieldDBNames, field.DBName)
-			if newSchema.PrioritizedPrimaryField == nil {
-				newSchema.PrioritizedPrimaryField = field
-			}
+		if columnType == nil {
+			return false
 		}
+		return !columnNeedsMigration(a.db, modelField, columnType)
 	}
-	if len(newSchema.Fields) == 0 {
-		return nil
-	}
-	filtered := &TableSchema{
-		Schema:      &newSchema,
-		Model:       table.Model,
-		Indexes:     filterIndexesForDiff(table.Indexes, excluded),
-		Constraints: filterConstraintsForDiff(table.Constraints, excluded),
-	}
-	return filtered
-}
-
-func identifyExcludedColumns(table string, fields []*schema.Field, rules []FieldRule) map[string]struct{} {
-	if len(rules) == 0 {
-		return nil
-	}
-	excluded := make(map[string]struct{})
-	for _, field := range fields {
-		if field == nil {
-			continue
-		}
-		if rule, ok := matchFieldRule(rules, table, field.DBName); ok && rule.Exclude {
-			excluded[field.DBName] = struct{}{}
-		}
-	}
-	return excluded
-}
-
-func filterIndexesForDiff(indexes []*schema.Index, ignored map[string]struct{}) []*schema.Index {
-	if len(indexes) == 0 || len(ignored) == 0 {
-		return indexes
-	}
-	filtered := make([]*schema.Index, 0, len(indexes))
-	for _, idx := range indexes {
-		if idx == nil {
-			continue
-		}
-		newIdx := *idx
-		newIdx.Fields = nil
-		for _, option := range idx.Fields {
-			if option.Field != nil {
-				if _, skip := ignored[option.Field.DBName]; skip {
-					continue
-				}
-			}
-			newIdx.Fields = append(newIdx.Fields, option)
-		}
-		if len(idx.Fields) > 0 && len(newIdx.Fields) == 0 {
-			continue
-		}
-		filtered = append(filtered, &newIdx)
-	}
-	return filtered
-}
-
-func filterConstraintsForDiff(constraints []*schema.Constraint, ignored map[string]struct{}) []*schema.Constraint {
-	if len(constraints) == 0 || len(ignored) == 0 {
-		return constraints
-	}
-	filtered := make([]*schema.Constraint, 0, len(constraints))
-	for _, cons := range constraints {
-		if cons == nil {
-			continue
-		}
-		if constraintReferencesExcludedField(cons, ignored) {
-			continue
-		}
-		filtered = append(filtered, cons)
-	}
-	return filtered
-}
-
-func constraintReferencesExcludedField(cons *schema.Constraint, ignored map[string]struct{}) bool {
-	for _, field := range cons.ForeignKeys {
-		if field != nil {
-			if _, skip := ignored[field.DBName]; skip {
-				return true
-			}
-		}
-	}
-	for _, field := range cons.References {
-		if field != nil {
-			if _, skip := ignored[field.DBName]; skip {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 type ModifiedColumn struct {
@@ -194,7 +98,7 @@ func (r SchemaDiffResult) Empty() bool {
 	return len(r.CreatedTables) == 0 && len(r.DroppedTables) == 0 && len(r.ModifiedTables) == 0
 }
 
-func diffSchemas(models, db map[string]*TableSchema) SchemaDiffResult {
+func diffSchemas(models, db map[string]*TableSchema, cmp columnComparator) SchemaDiffResult {
 	var result SchemaDiffResult
 	seen := make(map[string]struct{})
 	for tableName, modelTable := range models {
@@ -204,7 +108,7 @@ func diffSchemas(models, db map[string]*TableSchema) SchemaDiffResult {
 			result.CreatedTables = append(result.CreatedTables, modelTable)
 			continue
 		}
-		if modified := diffTable(modelTable, dbTable); modified != nil {
+		if modified := diffTable(modelTable, dbTable, cmp); modified != nil {
 			result.ModifiedTables = append(result.ModifiedTables, modified)
 		}
 	}
@@ -217,9 +121,18 @@ func diffSchemas(models, db map[string]*TableSchema) SchemaDiffResult {
 	return result
 }
 
-func diffTable(model, db *TableSchema) *ModifiedTable {
-	addedCols, droppedCols, modifiedCols := diffColumns(model.Schema, db.Schema)
-	addedIdx, droppedIdx := diffIndexes(model.Indexes, db.Indexes)
+func diffTable(model, db *TableSchema, cmp columnComparator) *ModifiedTable {
+	addedCols, droppedCols, modifiedCols := diffColumns(model, db, cmp)
+	var addedIdx, droppedIdx []*schema.Index
+	if !ignoreIndexDiffs {
+		modelIndexes := model.Indexes
+		dbIndexes := db.Indexes
+		if fkCols := foreignKeyColumnSet(model); len(fkCols) > 0 {
+			modelIndexes = excludeForeignKeyIndexes(modelIndexes, fkCols)
+			dbIndexes = excludeForeignKeyIndexes(dbIndexes, fkCols)
+		}
+		addedIdx, droppedIdx = diffIndexes(modelIndexes, dbIndexes)
+	}
 	if len(addedCols) == 0 && len(droppedCols) == 0 && len(modifiedCols) == 0 && len(addedIdx) == 0 && len(droppedIdx) == 0 {
 		return nil
 	}
@@ -234,9 +147,9 @@ func diffTable(model, db *TableSchema) *ModifiedTable {
 	}
 }
 
-func diffColumns(model, db *schema.Schema) (added, dropped []*schema.Field, modified []*ModifiedColumn) {
-	modelFields := maps.Clone(model.FieldsByDBName)
-	dbFields := maps.Clone(db.FieldsByDBName)
+func diffColumns(model, db *TableSchema, cmp columnComparator) (added, dropped []*schema.Field, modified []*ModifiedColumn) {
+	modelFields := maps.Clone(model.Schema.FieldsByDBName)
+	dbFields := maps.Clone(db.Schema.FieldsByDBName)
 
 	for key, field := range modelFields {
 		dbField, ok := dbFields[key]
@@ -244,7 +157,13 @@ func diffColumns(model, db *schema.Schema) (added, dropped []*schema.Field, modi
 			added = append(added, field)
 			continue
 		}
-		if !fieldsEqual(field, dbField) {
+		columnType := db.columnTypeForField(dbField)
+		fieldForCompare := prepareFieldForComparison(field, columnType)
+		if cmp != nil {
+			if !cmp(fieldForCompare, dbField, columnType) {
+				modified = append(modified, &ModifiedColumn{Old: dbField, New: field})
+			}
+		} else if !fieldsEqual(field, dbField) {
 			modified = append(modified, &ModifiedColumn{Old: dbField, New: field})
 		}
 		delete(dbFields, key)
@@ -253,6 +172,98 @@ func diffColumns(model, db *schema.Schema) (added, dropped []*schema.Field, modi
 		dropped = append(dropped, field)
 	}
 	return
+}
+
+func prepareFieldForComparison(field *schema.Field, columnType gorm.ColumnType) *schema.Field {
+	if field == nil {
+		return nil
+	}
+	clone := *field
+	if field.TagSettings != nil {
+		clone.TagSettings = make(map[string]string, len(field.TagSettings))
+		for k, v := range field.TagSettings {
+			clone.TagSettings[k] = v
+		}
+	} else {
+		clone.TagSettings = make(map[string]string)
+	}
+	if columnType != nil {
+		applyColumnTypeDefaults(&clone, columnType)
+	}
+	return &clone
+}
+
+func applyColumnTypeDefaults(field *schema.Field, columnType gorm.ColumnType) {
+	if field == nil || columnType == nil {
+		return
+	}
+	typeExpr := columnTypeExpression(columnType)
+	if typeExpr != "" {
+		field.TagSettings["TYPE"] = typeExpr
+		base := typeExpr
+		if idx := strings.Index(base, "("); idx >= 0 {
+			base = base[:idx]
+		}
+		base = strings.TrimSpace(base)
+		if base != "" {
+			field.DataType = schema.DataType(base)
+			field.GORMDataType = field.DataType
+		}
+	}
+	if precision, scale, ok := columnType.DecimalSize(); ok {
+		if precision > 0 {
+			field.Precision = int(precision)
+		}
+		if scale > 0 {
+			field.Scale = int(scale)
+		}
+	} else if length, ok := columnType.Length(); ok && length > 0 {
+		field.Size = int(length)
+	}
+	if nullable, ok := columnType.Nullable(); ok {
+		if field.FieldType != nil && !fieldTypeAllowsNull(field.FieldType) {
+			field.NotNull = !nullable
+		}
+	}
+}
+
+func columnTypeExpression(columnType gorm.ColumnType) string {
+	if columnType == nil {
+		return ""
+	}
+	if ct, ok := columnType.ColumnType(); ok {
+		if expr := strings.ToLower(strings.TrimSpace(ct)); expr != "" {
+			return expr
+		}
+	}
+	dbType := strings.ToLower(strings.TrimSpace(columnType.DatabaseTypeName()))
+	if dbType == "" {
+		return ""
+	}
+	if precision, scale, ok := columnType.DecimalSize(); ok && precision > 0 {
+		if scale > 0 {
+			return fmt.Sprintf("%s(%d,%d)", dbType, precision, scale)
+		}
+		return fmt.Sprintf("%s(%d)", dbType, precision)
+	}
+	if length, ok := columnType.Length(); ok && length > 0 {
+		return fmt.Sprintf("%s(%d)", dbType, length)
+	}
+	return dbType
+}
+
+func fieldTypeAllowsNull(rt reflect.Type) bool {
+	if rt == nil {
+		return true
+	}
+	switch rt.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Map:
+		return true
+	}
+	if implementsScannerOrValuer(rt) {
+		return true
+	}
+	return false
 }
 
 func fieldsEqual(a, b *schema.Field) bool {
@@ -292,6 +303,60 @@ func diffIndexes(model, db []*schema.Index) (added, dropped []*schema.Index) {
 		dropped = append(dropped, idx)
 	}
 	return
+}
+
+func foreignKeyColumnSet(table *TableSchema) map[string]struct{} {
+	if table == nil || len(table.Constraints) == 0 {
+		return nil
+	}
+	fkCols := make(map[string]struct{})
+	for _, cons := range table.Constraints {
+		if cons == nil {
+			continue
+		}
+		for _, field := range cons.ForeignKeys {
+			if field == nil {
+				continue
+			}
+			fkCols[strings.ToLower(field.DBName)] = struct{}{}
+		}
+	}
+	if len(fkCols) == 0 {
+		return nil
+	}
+	return fkCols
+}
+
+func excludeForeignKeyIndexes(indexes []*schema.Index, fkCols map[string]struct{}) []*schema.Index {
+	if len(indexes) == 0 || len(fkCols) == 0 {
+		return indexes
+	}
+	filtered := make([]*schema.Index, 0, len(indexes))
+	for _, idx := range indexes {
+		if idx == nil {
+			continue
+		}
+		if indexOnlyUsesColumns(idx, fkCols) {
+			continue
+		}
+		filtered = append(filtered, idx)
+	}
+	return filtered
+}
+
+func indexOnlyUsesColumns(idx *schema.Index, cols map[string]struct{}) bool {
+	if idx == nil || len(idx.Fields) == 0 {
+		return false
+	}
+	for _, opt := range idx.Fields {
+		if opt.Field == nil {
+			return false
+		}
+		if _, ok := cols[strings.ToLower(opt.Field.DBName)]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func writeSchemaDiff(w io.Writer, diff SchemaDiffResult) {
@@ -456,4 +521,128 @@ func describeDefaultValue(field *schema.Field) string {
 		return val
 	}
 	return "<empty>"
+}
+
+func columnNeedsMigration(db *gorm.DB, field *schema.Field, columnType gorm.ColumnType) bool {
+	if field == nil || columnType == nil {
+		return true
+	}
+	if field.IgnoreMigration {
+		return false
+	}
+	if string(field.DataType) == "" {
+		return true
+	}
+
+	migrator := db.Migrator()
+	// Check if field.FieldType is nil, which would cause reflect.New(nil) panic
+	if field.FieldType == nil {
+		return true
+	}
+
+	fullDataType := strings.TrimSpace(strings.ToLower(migrator.FullDataTypeOf(field).SQL))
+	realDataType := strings.ToLower(columnType.DatabaseTypeName())
+	if realDataType == "" {
+		return true
+	}
+	var (
+		alterColumn bool
+		isSameType  = fullDataType == realDataType
+	)
+
+	if !field.PrimaryKey {
+		if !strings.HasPrefix(fullDataType, realDataType) {
+			aliases := migrator.GetTypeAliases(realDataType)
+			for _, alias := range aliases {
+				if strings.HasPrefix(fullDataType, alias) {
+					isSameType = true
+					break
+				}
+			}
+			if !isSameType {
+				alterColumn = true
+			}
+		}
+	}
+
+	if !isSameType {
+		if length, ok := columnType.Length(); length != int64(field.Size) {
+			if length > 0 && field.Size > 0 {
+				alterColumn = true
+			} else {
+				matches2 := regFullDataType.FindAllStringSubmatch(fullDataType, -1)
+				if !field.PrimaryKey &&
+					(len(matches2) == 1 && matches2[0][1] != fmt.Sprint(length) && ok) {
+					alterColumn = true
+				}
+			}
+		}
+	}
+
+	if realDataType == "decimal" || (realDataType == "numeric" &&
+		regexp.MustCompile(realDataType+`\(.*\)`).FindString(fullDataType) != "") {
+		precision, scale, ok := columnType.DecimalSize()
+		if ok {
+			if !strings.HasPrefix(fullDataType, fmt.Sprintf("%s(%d,%d)", realDataType, precision, scale)) &&
+				!strings.HasPrefix(fullDataType, fmt.Sprintf("%s(%d)", realDataType, precision)) {
+				alterColumn = true
+			}
+		}
+	} else {
+		type dataTyper interface {
+			DataTypeOf(*schema.Field) string
+		}
+		var dataTypeOf string
+		if dt, ok := migrator.(dataTyper); ok {
+			dataTypeOf = dt.DataTypeOf(field)
+		} else {
+			dataTypeOf = string(field.DataType)
+		}
+		if precision, _, ok := columnType.DecimalSize(); ok && int64(field.Precision) != precision {
+			if regexp.MustCompile(fmt.Sprintf("[^0-9]%d[^0-9]", field.Precision)).MatchString(dataTypeOf) {
+				alterColumn = true
+			}
+		}
+	}
+
+	if nullable, ok := columnType.Nullable(); ok && nullable == field.NotNull {
+		if !field.PrimaryKey && !nullable {
+			alterColumn = true
+		}
+	}
+
+	if !field.PrimaryKey {
+		currentDefaultNotNull := field.HasDefaultValue && (field.DefaultValueInterface != nil || !strings.EqualFold(field.DefaultValue, "NULL"))
+		dv, dvNotNull := columnType.DefaultValue()
+		if dvNotNull && !currentDefaultNotNull {
+			alterColumn = true
+		} else if !dvNotNull && currentDefaultNotNull {
+			alterColumn = true
+		} else if currentDefaultNotNull || dvNotNull {
+			switch field.GORMDataType {
+			case schema.Time:
+				if !strings.EqualFold(strings.TrimSuffix(dv, "()"), strings.TrimSuffix(field.DefaultValue, "()")) {
+					alterColumn = true
+				}
+			case schema.Bool:
+				v1, _ := strconv.ParseBool(dv)
+				v2, _ := strconv.ParseBool(field.DefaultValue)
+				alterColumn = v1 != v2
+			case schema.String:
+				if dv != field.DefaultValue && dv != strings.Trim(field.DefaultValue, "'\"") {
+					alterColumn = true
+				}
+			default:
+				alterColumn = dv != field.DefaultValue
+			}
+		}
+	}
+
+	if comment, ok := columnType.Comment(); ok && comment != field.Comment {
+		if !field.PrimaryKey {
+			alterColumn = true
+		}
+	}
+
+	return alterColumn
 }
