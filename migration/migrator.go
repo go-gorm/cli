@@ -75,12 +75,19 @@ func WithDBAdapter(db *gorm.DB) Option {
 
 // Run executes the migration command, registering the provided migrations and exiting on error.
 func (r *Migrator) Run(migrations []Migration) {
+	r.args = os.Args[1:]
+
 	for _, adp := range r.adapters {
 		adp.RegisterMigrations(migrations)
 
-		r.args = os.Args[1:]
-
 		if err := r.run(adp, r.args); err != nil {
+			log.Print(err)
+			os.Exit(1)
+		}
+	}
+
+	if len(r.adapters) == 0 {
+		if err := r.run(nil, r.args); err != nil {
 			log.Print(err)
 			os.Exit(1)
 		}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"gorm.io/cli/gorm/internal/migration/adapter"
 	"gorm.io/cli/gorm/internal/project"
 )
 
@@ -41,14 +42,14 @@ func New() *cobra.Command {
 }
 
 func newInitCmd(mgr *Manager) *cobra.Command {
-	var force bool
+	var yes bool
 
 	cmd := &cobra.Command{
 		Use:          "init",
 		Short:        "Initialize the migrations directories",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := mgr.Init(InitOptions{Force: force})
+			err := mgr.Init(InitOptions{AutoApprove: yes})
 			if err != nil {
 				return err
 			}
@@ -58,7 +59,9 @@ func newInitCmd(mgr *Manager) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompts when initializing")
+	cmd.Flags().BoolVar(&yes, "force", false, "Deprecated: use --yes")
+	_ = cmd.Flags().MarkHidden("force")
 
 	return cmd
 }
@@ -122,14 +125,12 @@ func newDiffCmd(mgr *Manager) *cobra.Command {
 		Short:        "Model ↔ DB diff (read-only)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := mgr.generateDiffFile()
+			path, err := adapter.GenerateDiffFile(mgr.ModelsDir, mgr.MigrationsDir)
 			if err != nil {
 				return err
 			}
-			cleanup := cleanupDiffArtifact(path)
-			if cleanup != nil {
-				defer cleanup()
-			}
+			defer cleanupDiffFile(path)
+
 			var subArgs []string
 			if generated {
 				subArgs = append(subArgs, "--generated-file")
@@ -182,7 +183,6 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			subArgs := []string{name}
-			var cleanup func()
 			if dryRun {
 				subArgs = append(subArgs, "--dry-run")
 			}
@@ -191,14 +191,11 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 			}
 			if auto {
 				subArgs = append(subArgs, "--auto")
-				path, err := mgr.generateDiffFile()
+				path, err := adapter.GenerateDiffFile(mgr.ModelsDir, mgr.MigrationsDir)
 				if err != nil {
 					return err
 				}
-				cleanup = cleanupDiffArtifact(path)
-			}
-			if cleanup != nil {
-				defer cleanup()
+				defer cleanupDiffFile(path)
 			}
 			return mgr.runRunner(cmd, "create", subArgs)
 		},
@@ -229,14 +226,9 @@ func (mgr *Manager) runRunner(cmd *cobra.Command, subcommand string, args []stri
 	return nil
 }
 
-func cleanupDiffArtifact(path string) func() {
-	if path == "" {
-		return nil
+func cleanupDiffFile(path string) {
+	if path == "" || os.Getenv("GORM_KEEP_DIFF_FILE") == "1" {
+		return
 	}
-	return func() {
-		if os.Getenv("GORM_KEEP_DIFF_FILE") == "1" {
-			return
-		}
-		_ = os.Remove(path)
-	}
+	_ = os.Remove(path)
 }

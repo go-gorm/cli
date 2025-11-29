@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -267,6 +266,10 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 		fmt.Fprintln(os.Stdout, "No tables found in database")
 		return nil
 	}
+	writeFlags := utils.ConfirmFlag(0)
+	if opts.AutoApprove {
+		writeFlags = utils.ConfirmAuto
+	}
 
 	for tableName := range configs {
 		finalConfig := configs[tableName]
@@ -327,7 +330,7 @@ func (a *DBAdapter) GenerateModel(opts GenerateModelOptions) error {
 			continue
 		}
 
-		ok, err := utils.ConfirmWrite(path, opts.AutoApprove)
+		ok, err := utils.ConfirmWrite(path, writeFlags)
 		if err != nil {
 			return err
 		}
@@ -363,54 +366,13 @@ func (a *DBAdapter) resolveTableConfigs() (map[string]TableConfig, error) {
 	return configs, nil
 }
 
-func buildConfigForTable(table string, rules []TableRule) (TableConfig, bool) {
-	var finalCfg TableConfig
-	include := true
-	foundRule := false
-	for _, rule := range rules {
-		if rule.Pattern == "" {
-			continue
-		}
-		ok, err := filepath.Match(rule.Pattern, table)
-		if err != nil || !ok {
-			continue
-		}
-		foundRule = true
-		if rule.Exclude {
-			include = false
-			break
-		}
-		if len(rule.Config.FieldRules) > 0 {
-			finalCfg.FieldRules = append(finalCfg.FieldRules, cloneFieldRules(rule.Config.FieldRules)...)
-		}
-		if rule.Config.OutputPath != "" {
-			finalCfg.OutputPath = rule.Config.OutputPath
-		}
-	}
-	if !foundRule {
-		return TableConfig{}, true
-	}
-	return finalCfg, include
-}
-
-func cloneFieldRules(src []FieldRule) []FieldRule {
-	dup := make([]FieldRule, len(src))
-	for i, v := range src {
-		dup[i] = FieldRule{
-			Pattern:   v.Pattern,
-			FieldName: v.FieldName,
-			FieldType: v.FieldType,
-			Tags:      maps.Clone(v.Tags),
-			Imports:   append([]string(nil), v.Imports...),
-			Exclude:   v.Exclude,
-		}
-	}
-	return dup
-}
-
 var errStructNotFound = errors.New("struct not found")
 
 func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableConfig, opts GenerateModelOptions) error {
+	writeFlags := utils.ConfirmFlag(0)
+	if opts.AutoApprove {
+		writeFlags = utils.ConfirmAuto
+	}
 	fset := token.NewFileSet()
 	original, err := os.ReadFile(path)
 	if err != nil {
@@ -517,7 +479,7 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 		return nil
 	}
 
-	ok, err := utils.ConfirmWrite(path, opts.AutoApprove)
+	ok, err := utils.ConfirmWrite(path, writeFlags)
 	if err != nil {
 		return err
 	}
@@ -534,6 +496,10 @@ func (a *DBAdapter) mergeModelChanges(path, table, structName string, cfg TableC
 }
 
 func (a *DBAdapter) appendModelDefinition(ns schema.Namer, path, table, structName string, cfg TableConfig, opts GenerateModelOptions) error {
+	writeFlags := utils.ConfirmFlag(0)
+	if opts.AutoApprove {
+		writeFlags = utils.ConfirmAuto
+	}
 	cols, err := a.db.Migrator().ColumnTypes(table)
 	if err != nil {
 		return fmt.Errorf("get column types for %s: %w", table, err)
@@ -576,7 +542,7 @@ func (a *DBAdapter) appendModelDefinition(ns schema.Namer, path, table, structNa
 	if opts.DryRun {
 		return nil
 	}
-	ok, err := utils.ConfirmWrite(path, opts.AutoApprove)
+	ok, err := utils.ConfirmWrite(path, writeFlags)
 	if err != nil {
 		return err
 	}
@@ -612,6 +578,10 @@ func (a *DBAdapter) GenerateMigration(opts GenerateMigrationOptions) error {
 	if opts.Name == "" {
 		return errors.New("migration name is required")
 	}
+	writeFlags := utils.ConfirmFlag(0)
+	if opts.AutoApprove {
+		writeFlags = utils.ConfirmAuto
+	}
 	ts := time.Now().UTC().Format("20060102150405")
 	slug := project.Slugify(opts.Name)
 	filename := fmt.Sprintf("%s_%s.go", ts, slug)
@@ -626,7 +596,7 @@ func (a *DBAdapter) GenerateMigration(opts GenerateMigrationOptions) error {
 		fmt.Fprintf(os.Stdout, "--- model preview (%s) ---%c%s\n--- end ---\n", path, '\n', string(contentBytes))
 		return nil
 	}
-	ok, err := utils.ConfirmWrite(path, opts.AutoApprove)
+	ok, err := utils.ConfirmWrite(path, writeFlags)
 	if err != nil {
 		return err
 	}
@@ -661,26 +631,6 @@ func (a *DBAdapter) registeredMigrations() []Migration {
 func (a *DBAdapter) migrationByName(name string) (Migration, bool) {
 	m, ok := a.migrations[name]
 	return m, ok
-}
-
-func matchFieldRule(rules []FieldRule, table, column string) (FieldRule, bool) {
-	full := table + "." + column
-	for _, rule := range rules {
-		pattern := strings.TrimSpace(rule.Pattern)
-		if pattern == "" {
-			pattern = full
-		}
-		if pattern == full || pattern == column {
-			return rule, true
-		}
-		if matched, _ := filepath.Match(pattern, full); matched {
-			return rule, true
-		}
-		if matched, _ := filepath.Match(pattern, column); matched {
-			return rule, true
-		}
-	}
-	return FieldRule{}, false
 }
 
 func (a *DBAdapter) buildStructFields(ns schema.Namer, table string, cols []gorm.ColumnType, cfg TableConfig) (string, []string, error) {

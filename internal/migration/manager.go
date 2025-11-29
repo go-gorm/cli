@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"gorm.io/cli/gorm/internal/project"
+	"gorm.io/cli/gorm/internal/utils"
 )
 
 const (
@@ -29,7 +30,7 @@ type Manager struct {
 
 // InitOptions configures the init command.
 type InitOptions struct {
-	Force bool
+	AutoApprove bool
 }
 
 func (mgr Manager) Init(opts InitOptions) error {
@@ -40,16 +41,25 @@ func (mgr Manager) Init(opts InitOptions) error {
 		return fmt.Errorf("create %s: %w", migrationsDir, err)
 	}
 
-	if err := writeRunnerFile(runnerFile, opts.Force, mgr); err != nil {
+	if err := writeRunnerFile(runnerFile, opts.AutoApprove, mgr); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func writeRunnerFile(path string, force bool, data Manager) error {
-	if err := preventOverwrite(path, force); err != nil {
+func writeRunnerFile(path string, autoApprove bool, data Manager) error {
+	flags := utils.ConfirmSkipIfMissing
+	if autoApprove {
+		flags |= utils.ConfirmAuto
+	}
+	ok, err := utils.ConfirmWrite(path, flags)
+	if err != nil {
 		return err
+	}
+	if !ok {
+		fmt.Fprintf(os.Stdout, "Skipped %s\n", path)
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("prepare runner dir: %w", err)
@@ -59,15 +69,6 @@ func writeRunnerFile(path string, force bool, data Manager) error {
 		return fmt.Errorf("render runner template: %w", err)
 	}
 	return os.WriteFile(path, buf.Bytes(), 0o644)
-}
-
-func preventOverwrite(path string, force bool) error {
-	if !force {
-		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("%s already exists (use --force to overwrite)", path)
-		}
-	}
-	return nil
 }
 
 var runnerTemplate = template.Must(template.New("runner").Parse(defaultRunnerTemplate))

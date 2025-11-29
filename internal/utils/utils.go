@@ -1,11 +1,51 @@
 package utils
 
 import (
+	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
+
+// ConfirmFlag toggles ConfirmWrite behaviors via bitmask flags.
+type ConfirmFlag uint8
+
+const (
+	// ConfirmAuto auto-approves writes without prompting.
+	ConfirmAuto ConfirmFlag = 1 << iota
+	// ConfirmSkipIfMissing skips prompts when the target file is absent.
+	ConfirmSkipIfMissing
+)
+
+// ConfirmWrite prompts before creating or overwriting path unless flags short-circuit.
+func ConfirmWrite(path string, flags ConfirmFlag) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	missing := errors.Is(err, os.ErrNotExist)
+	if missing && flags&ConfirmSkipIfMissing != 0 {
+		return true, nil
+	}
+	action := "create"
+	if !missing && info.Mode().IsRegular() {
+		action = "overwrite"
+	}
+	if flags&ConfirmAuto != 0 {
+		return true, nil
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprintf(os.Stdout, "%s %s? [y/N]: ", strings.Title(action), path)
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	response := strings.TrimSpace(strings.ToLower(line))
+	return response == "y" || response == "yes", nil
+}
 
 // PrintDiff renders a compact unified diff for before/after and writes to stdout.
 func PrintDiff(path string, before, after []byte) {
