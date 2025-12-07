@@ -13,8 +13,10 @@ func New() *cobra.Command {
 	var input, output string
 
 	cmd := &cobra.Command{
-		Use:   "gen",
-		Short: "Generate GORM query code from raw SQL interfaces",
+		Use:          "gen",
+		Short:        "Generate GORM query code from raw SQL interfaces",
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g := Generator{
 				Typed:   typed,

@@ -10,10 +10,13 @@ import (
 
 // DetectPackage returns the name of the first Go package found in dir.
 func DetectPackage(dir string) string {
+	pkgName := filepath.Base(dir)
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return ""
+		return pkgName
 	}
+
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
@@ -25,5 +28,6 @@ func DetectPackage(dir string) string {
 			return file.Name.Name
 		}
 	}
-	return ""
+
+	return pkgName
 }

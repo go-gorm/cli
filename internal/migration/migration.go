@@ -48,6 +48,7 @@ func newInitCmd(mgr *Manager) *cobra.Command {
 		Use:          "init",
 		Short:        "Initialize the migrations directories",
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := mgr.Init(InitOptions{AutoApprove: yes})
 			if err != nil {
@@ -73,6 +74,7 @@ func newUpCmd(mgr *Manager) *cobra.Command {
 		Use:          "up",
 		Short:        "Apply pending migrations",
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var flags []string
 			if limit > 0 {
@@ -94,6 +96,7 @@ func newDownCmd(mgr *Manager) *cobra.Command {
 		Use:          "down",
 		Short:        "Rollback previously applied migrations",
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := []string{fmt.Sprintf("--steps=%d", steps)}
 			return mgr.runRunner(cmd, "down", flags)
@@ -110,6 +113,7 @@ func newStatusCmd(mgr *Manager) *cobra.Command {
 		Use:          "status",
 		Short:        "Show applied and pending migrations",
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return mgr.runRunner(cmd, "status", nil)
 		},
@@ -124,6 +128,7 @@ func newDiffCmd(mgr *Manager) *cobra.Command {
 		Use:          "diff",
 		Short:        "Model ↔ DB diff (read-only)",
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := adapter.GenerateDiffFile(mgr.ModelsDir, mgr.MigrationsDir)
 			if err != nil {
@@ -152,6 +157,7 @@ func newReflectCmd(mgr *Manager) *cobra.Command {
 		Use:          "reflect",
 		Short:        "Reflect DB schema into models (DB → Model)",
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			subArgs := []string{}
 			if dryRun {
@@ -176,10 +182,16 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 	var auto bool
 
 	cmd := &cobra.Command{
-		Use:          "create",
-		Short:        "Generate a migration file from models (Model → Migration File)",
-		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Use:           "create",
+		Short:         "Generate a migration file from models (Model → Migration File)",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return errors.New("migration name is required")
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			subArgs := []string{name}

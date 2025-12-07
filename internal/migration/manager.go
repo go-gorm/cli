@@ -49,26 +49,20 @@ func (mgr Manager) Init(opts InitOptions) error {
 }
 
 func writeRunnerFile(path string, autoApprove bool, data Manager) error {
-	flags := utils.ConfirmSkipIfMissing
-	if autoApprove {
-		flags |= utils.ConfirmAuto
-	}
-	ok, err := utils.ConfirmWrite(path, flags)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		fmt.Fprintf(os.Stdout, "Skipped %s\n", path)
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("prepare runner dir: %w", err)
-	}
+	// Generate the new content first to allow for diffing.
 	var buf bytes.Buffer
 	if err := runnerTemplate.Execute(&buf, data); err != nil {
 		return fmt.Errorf("render runner template: %w", err)
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	newContent := buf.Bytes()
+
+	// Read original content, ignoring error if it doesn't exist.
+	originalContent, _ := os.ReadFile(path)
+
+	// Use the centralized utility for writing the file.
+	// dryRun is false because this command doesn't support it directly.
+	// skipIfMissing is true to maintain the original behavior.
+	return utils.WriteFileWithConfirmation(path, originalContent, newContent, false, autoApprove, true)
 }
 
 var runnerTemplate = template.Must(template.New("runner").Parse(defaultRunnerTemplate))

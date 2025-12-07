@@ -46,9 +46,7 @@ func New(cfg Config, opts ...Option) *Migrator {
 	cfg.MigrationsDir = project.ResolveRootPath(cfg.MigrationsDir)
 	r := &Migrator{cfg: cfg}
 	for _, opt := range opts {
-		if opt != nil {
-			opt(r)
-		}
+		opt(r)
 	}
 	return r
 }

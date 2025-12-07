@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -19,6 +20,56 @@ const (
 	// ConfirmSkipIfMissing skips prompts when the target file is absent.
 	ConfirmSkipIfMissing
 )
+
+// WriteFileWithConfirmation handles the common workflow of diffing, prompting, and writing a file.
+func WriteFileWithConfirmation(path string, original, newContent []byte, dryRun, autoApprove, skipIfMissing bool) error {
+	if bytes.Equal(original, newContent) {
+		// No changes, but in dryRun mode we might still want to see the "no changes" message.
+		if !dryRun {
+			fmt.Fprintf(os.Stdout, "Model %s is already up to date.\n", path)
+			return nil
+		}
+	}
+
+	PrintDiff(path, original, newContent)
+
+	if dryRun {
+		// In dry-run, we just show the diff and stop.
+		return nil
+	}
+
+	flags := ConfirmFlag(0)
+	if autoApprove {
+		flags |= ConfirmAuto
+	}
+	if skipIfMissing {
+		flags |= ConfirmSkipIfMissing
+	}
+
+	ok, err := ConfirmWrite(path, flags)
+	if err != nil {
+		return fmt.Errorf("failed to confirm write for %s: %w", path, err)
+	}
+	if !ok {
+		fmt.Fprintf(os.Stdout, "Skipped %s\n", path)
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, newContent, 0o644); err != nil {
+		return fmt.Errorf("failed to write model file %s: %w", path, err)
+	}
+
+	// Determine if the file was created or updated for the message.
+	action := "updated"
+	if len(original) == 0 {
+		action = "created"
+	}
+	fmt.Fprintf(os.Stdout, "Model %s %s.\n", path, action)
+	return nil
+}
 
 // ConfirmWrite prompts before creating or overwriting path unless flags short-circuit.
 func ConfirmWrite(path string, flags ConfirmFlag) (bool, error) {
