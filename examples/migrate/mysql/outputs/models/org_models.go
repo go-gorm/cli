@@ -6,37 +6,33 @@ import (
 	"time"
 )
 
-type Company struct {
-	ID           uint64    `gorm:"primaryKey;column:id"`
-	Code         string    `gorm:"column:code"`
-	CompanyName  string    `gorm:"column:name" json:"company_name"`
-	FoundedYear  int32     `gorm:"column:founded_year"`
-	MetadataJSON []byte    `gorm:"column:metadata"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
-}
-
-func (Company) TableName() string {
-	return "companies"
-}
-
 type Employee struct {
-	ID           uint64     `gorm:"primaryKey;column:id"`
-	CompanyRefID uint64     `gorm:"column:company_id"`
-	FullName     string     `gorm:"column:full_name"`
-	Role         string     `gorm:"column:role" json:"role"`
-	MetadataBlob []byte     `gorm:"column:metadata"`
-	Salary       float64    `gorm:"column:salary"`
-	HiredAt      time.Time  `gorm:"column:hired_at"`
+	ID           uint64     `gorm:"primaryKey;column:id;not null"`
+	CompanyRefID uint64     `gorm:"column:company_id;not null"`
+	FullName     string     `gorm:"column:full_name;size:128;not null"`
+	Role         string     `gorm:"column:role;size:64;not null" json:"role"`
+	MetadataBlob []byte     `gorm:"column:metadata;type:json;not null"`
+	Salary       string     `gorm:"column:salary;type:decimal;precision:10;scale:2;not null"`
+	HiredAt      time.Time  `gorm:"column:hired_at;not null"`
 	DepartedAt   *time.Time `gorm:"column:departed_at"`
-	CreatedAt    time.Time  `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt    time.Time  `gorm:"column:updated_at" json:"updated_at"`
+	CreatedAt    time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt    time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (Employee) TableName() string {
 	return "employees"
 }
 
-func (e Employee) GetFullName() string {
-	return e.FullName
+type Company struct {
+	ID           uint64    `gorm:"primaryKey;column:id;not null"`
+	Code         string    `gorm:"column:code;size:64;not null"`
+	CompanyName  string    `gorm:"column:name;size:128;not null" json:"company_name"`
+	FoundedYear  int32     `gorm:"column:founded_year;not null"`
+	MetadataJSON []byte    `gorm:"column:metadata;type:json;not null"`
+	CreatedAt    time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (Company) TableName() string {
+	return "companies"
 }

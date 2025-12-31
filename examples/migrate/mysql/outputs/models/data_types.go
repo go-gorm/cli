@@ -7,21 +7,21 @@ import (
 )
 
 type DataType struct {
-	ID            uint64    `gorm:"primaryKey;column:id"`
-	TinySigned    int8      `gorm:"column:tiny_signed"`
-	TinyUnsigned  uint8     `gorm:"column:tiny_unsigned"`
-	SmallSigned   int16     `gorm:"column:small_signed"`
-	SmallUnsigned uint16    `gorm:"column:small_unsigned"`
-	IntSigned     int32     `gorm:"column:int_signed"`
-	IntUnsigned   uint32    `gorm:"column:int_unsigned"`
-	BigSigned     int64     `gorm:"column:big_signed"`
-	FloatCol      float32   `gorm:"column:float_col"`
-	DoubleCol     float64   `gorm:"column:double_col"`
-	CharCol       string    `gorm:"column:char_col"`
-	TextCol       string    `gorm:"column:text_col"`
-	BlobCol       []byte    `gorm:"column:blob_col"`
-	BinaryCol     []byte    `gorm:"column:binary_col"`
-	CreatedAt     time.Time `gorm:"column:created_at"`
+	ID            uint64    `gorm:"primaryKey;column:id;not null"`
+	TinySigned    int8      `gorm:"column:tiny_signed;not null"`
+	TinyUnsigned  uint8     `gorm:"column:tiny_unsigned;not null"`
+	SmallSigned   int16     `gorm:"column:small_signed;not null"`
+	SmallUnsigned uint16    `gorm:"column:small_unsigned;not null"`
+	IntSigned     int32     `gorm:"column:int_signed;not null"`
+	IntUnsigned   uint32    `gorm:"column:int_unsigned;not null"`
+	BigSigned     int64     `gorm:"column:big_signed;not null"`
+	FloatCol      float32   `gorm:"column:float_col;not null"`
+	DoubleCol     float64   `gorm:"column:double_col;not null"`
+	CharCol       string    `gorm:"column:char_col;size:191;not null"`
+	TextCol       string    `gorm:"column:text_col;type:text;size:65535;not null"`
+	BlobCol       []byte    `gorm:"column:blob_col;type:blob;size:65535;not null"`
+	BinaryCol     []byte    `gorm:"column:binary_col;size:128;not null"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null"`
 }
 
 func (DataType) TableName() string {

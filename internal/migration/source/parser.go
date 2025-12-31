@@ -57,7 +57,7 @@ func toUniversalTables(snaps []ModelSnapshot) []*schema.Table {
 
 			table.Fields[i] = &schema.Field{
 				DBName:        fSnap.DBName,
-				DataType:      fSnap.GORMDataType,
+				DataType:      fSnap.DataType,
 				IsPrimaryKey:  fSnap.PrimaryKey,
 				IsNullable:    !fSnap.NotNull,
 				IsUnique:      fSnap.Unique,
@@ -134,7 +134,7 @@ func buildSnapshot(db *gorm.DB, model interface{}) (ModelSnapshot, error) {
 	return ModelSnapshot{
 		PackagePath: typ.Elem().PkgPath(),
 		TypeName:    typ.Elem().Name(),
-		Table:       encodeSchemaTable(stmt.Schema),
+		Table:       encodeSchemaTable(db, stmt.Schema),
 	}, nil
 }
 
@@ -202,13 +202,13 @@ type ConstraintSnapshot struct {
 	Expression       string   `json:"expression"`
 }
 
-func encodeSchemaTable(sch *gormSchema.Schema) TableSnapshot {
+func encodeSchemaTable(db *gorm.DB, sch *gormSchema.Schema) TableSnapshot {
 	fields := make([]FieldSnapshot, 0, len(sch.Fields))
 	for _, field := range sch.Fields {
 		if field.IgnoreMigration {
 			continue
 		}
-		fields = append(fields, encodeField(field))
+		fields = append(fields, encodeField(db, field))
 	}
 	indexes := sch.ParseIndexes()
 	indexSnaps := make([]IndexSnapshot, 0, len(indexes))
@@ -224,22 +224,41 @@ func encodeSchemaTable(sch *gormSchema.Schema) TableSnapshot {
 	}
 }
 
-func encodeField(field *gormSchema.Field) FieldSnapshot {
+func encodeField(db *gorm.DB, field *gormSchema.Field) FieldSnapshot {
 	tagSettings := make(map[string]string, len(field.TagSettings))
 	for k, v := range field.TagSettings {
 		tagSettings[k] = v
 	}
+
+	dataType := string(field.DataType)
+	if db != nil {
+		dataType = db.Dialector.DataTypeOf(field)
+		if idx := strings.Index(dataType, "("); idx != -1 {
+			dataType = dataType[:idx]
+		}
+		dataType = strings.ToLower(dataType)
+		dataType = strings.ReplaceAll(dataType, " unsigned", "")
+		dataType = strings.ReplaceAll(dataType, " auto_increment", "")
+		dataType = strings.TrimSpace(dataType)
+	}
+
+	size := field.Size
+	switch dataType {
+	case "int", "integer", "bigint", "smallint", "tinyint", "mediumint", "float", "double":
+		size = 0
+	}
+
 	return FieldSnapshot{
 		Name:                   field.Name,
 		DBName:                 field.DBName,
-		DataType:               string(field.DataType),
+		DataType:               dataType,
 		GORMDataType:           string(field.GORMDataType),
 		PrimaryKey:             field.PrimaryKey,
 		AutoIncrement:          field.AutoIncrement,
 		AutoIncrementIncrement: field.AutoIncrementIncrement,
 		NotNull:                field.NotNull,
 		Unique:                 field.Unique,
-		Size:                   field.Size,
+		Size:                   size,
 		Precision:              field.Precision,
 		Scale:                  field.Scale,
 		HasDefaultValue:        field.HasDefaultValue,

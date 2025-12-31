@@ -203,6 +203,9 @@ func (a *DBAdapter) GetDBSchemas() ([]*schema.Table, error) {
 		if tableName == (schemaMigration{}).TableName() {
 			continue
 		}
+		if _, include := buildConfigForTable(tableName, a.cfg.TableRules); !include {
+			continue
+		}
 		columns, err := a.db.Migrator().ColumnTypes(tableName)
 		if err != nil {
 			return nil, fmt.Errorf("describe table %s: %w", tableName, err)
@@ -588,6 +591,11 @@ func columnTypeToField(col gorm.ColumnType, ns gormSchema.Namer) *schema.Field {
 	dataType := col.DatabaseTypeName()
 	size, _ := col.Length()
 	precision, scale, _ := col.DecimalSize()
+	switch strings.ToUpper(dataType) {
+	case "BIGINT", "INT", "INTEGER", "SMALLINT", "TINYINT", "MEDIUMINT", "FLOAT", "DOUBLE":
+		precision = 0
+		scale = 0
+	}
 	var defValPtr *string
 	if def, ok := col.DefaultValue(); ok {
 		defValPtr = &def
@@ -597,6 +605,9 @@ func columnTypeToField(col gorm.ColumnType, ns gormSchema.Namer) *schema.Field {
 	nullable, _ := col.Nullable()
 
 	unique, _ := col.Unique()
+	if pk {
+		unique = false
+	}
 	return &schema.Field{
 		DBName:        col.Name(),
 		DataType:      dataType,
@@ -749,6 +760,39 @@ func buildGormTag(ns gormSchema.Namer, col gorm.ColumnType, fieldName string) st
 	if col.Name() != ns.TableName(fieldName) {
 		tags = append(tags, "column:"+col.Name())
 	}
+
+	dbType := strings.ToUpper(col.DatabaseTypeName())
+	if dbType == "JSON" {
+		tags = append(tags, "type:json")
+	}
+	if dbType == "BLOB" {
+		tags = append(tags, "type:blob")
+	}
+	if dbType == "TEXT" {
+		tags = append(tags, "type:text")
+	}
+	if dbType == "DECIMAL" {
+		tags = append(tags, "type:decimal")
+	}
+
+	if size, ok := col.Length(); ok && size > 0 {
+		tags = append(tags, fmt.Sprintf("size:%d", size))
+	}
+
+	if precision, scale, ok := col.DecimalSize(); ok && precision > 0 {
+		switch dbType {
+		case "DECIMAL", "NUMERIC":
+			tags = append(tags, fmt.Sprintf("precision:%d", precision))
+			if scale > 0 {
+				tags = append(tags, fmt.Sprintf("scale:%d", scale))
+			}
+		}
+	}
+
+	if nullable, ok := col.Nullable(); ok && !nullable {
+		tags = append(tags, "not null")
+	}
+
 	if val, ok := col.DefaultValue(); ok {
 		tags = append(tags, "default:"+val)
 	}
