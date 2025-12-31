@@ -592,10 +592,34 @@ func columnTypeToField(col gorm.ColumnType, ns gormSchema.Namer) *schema.Field {
 	size, _ := col.Length()
 	precision, scale, _ := col.DecimalSize()
 	switch strings.ToUpper(dataType) {
-	case "BIGINT", "INT", "INTEGER", "SMALLINT", "TINYINT", "MEDIUMINT", "FLOAT", "DOUBLE":
+	case "BIGINT", "INT", "INTEGER", "SMALLINT", "TINYINT", "MEDIUMINT", "FLOAT", "DOUBLE",
+		"INT8", "INT4", "INT2", "SERIAL", "BIGSERIAL", "TIMESTAMP", "TIMESTAMPTZ", "TIME", "DATE",
+		"REAL", "DOUBLE PRECISION", "FLOAT4", "FLOAT8":
 		precision = 0
 		scale = 0
+		size = 0
 	}
+	
+	// Normalize Postgres types
+	switch strings.ToUpper(dataType) {
+	case "INT8":
+		dataType = "bigint"
+	case "INT4":
+		dataType = "integer"
+	case "INT2":
+		dataType = "smallint"
+	case "BOOL":
+		dataType = "boolean"
+	case "FLOAT4", "REAL":
+		dataType = "decimal"
+	case "FLOAT8", "DOUBLE PRECISION":
+		dataType = "decimal"
+	case "NUMERIC":
+		dataType = "decimal"
+	case "JSONB":
+		dataType = "jsonb"
+	}
+
 	var defValPtr *string
 	if def, ok := col.DefaultValue(); ok {
 		defValPtr = &def
@@ -764,6 +788,9 @@ func buildGormTag(ns gormSchema.Namer, col gorm.ColumnType, fieldName string) st
 	dbType := strings.ToUpper(col.DatabaseTypeName())
 	if dbType == "JSON" {
 		tags = append(tags, "type:json")
+	}
+	if dbType == "JSONB" {
+		tags = append(tags, "type:jsonb")
 	}
 	if dbType == "BLOB" {
 		tags = append(tags, "type:blob")

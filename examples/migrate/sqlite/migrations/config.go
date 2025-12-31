@@ -55,6 +55,9 @@ func resetSchema(db *gorm.DB) {
 	}
 
 	for _, table := range tables {
+		if table == "sqlite_sequence" {
+			continue
+		}
 		if err := db.Migrator().DropTable(table); err != nil {
 			panic("failed to drop table: " + err.Error())
 		}

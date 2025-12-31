@@ -5,13 +5,13 @@ package models
 import "time"
 
 type MigPostgresCompany struct {
-	ID           int64     `gorm:"primaryKey;column:id"`
-	Code         string    `gorm:"column:code"`
-	CompanyName  string    `gorm:"column:name" json:"company_name"`
-	FoundedYear  int       `gorm:"column:founded_year"`
-	MetadataJSON []byte    `gorm:"column:metadata"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
+	ID           int64     `gorm:"primaryKey;column:id;size:64;not null"`
+	Code         string    `gorm:"column:code;type:text;size:9223372036854775807;not null"`
+	CompanyName  string    `gorm:"column:name;type:text;size:9223372036854775807;not null" json:"company_name"`
+	FoundedYear  int       `gorm:"column:founded_year;size:32;not null"`
+	MetadataJSON []byte    `gorm:"column:metadata;type:jsonb;not null"`
+	CreatedAt    time.Time `gorm:"column:created_at;size:64;not null"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;size:64;not null"`
 }
 
 func (MigPostgresCompany) TableName() string {
@@ -19,14 +19,14 @@ func (MigPostgresCompany) TableName() string {
 }
 
 type MigPostgresEmployee struct {
-	ID           int64      `gorm:"primaryKey;column:id"`
-	CompanyRefID int64      `gorm:"column:company_id"`
-	FullName     string     `gorm:"column:full_name"`
-	Role         string     `gorm:"column:role"`
-	MetadataBlob []byte     `gorm:"column:metadata"`
-	Salary       float64    `gorm:"column:salary"`
-	HiredAt      time.Time  `gorm:"column:hired_at"`
-	DepartedAt   *time.Time `gorm:"column:departed_at"`
+	ID           int64      `gorm:"primaryKey;column:id;size:64;not null"`
+	CompanyRefID int64      `gorm:"column:company_id;size:64;not null"`
+	FullName     string     `gorm:"column:full_name;type:text;size:9223372036854775807;not null"`
+	Role         string     `gorm:"column:role;type:text;size:9223372036854775807;not null"`
+	MetadataBlob []byte     `gorm:"column:metadata;type:jsonb;not null"`
+	Salary       float64    `gorm:"column:salary;precision:12;scale:2;not null"`
+	HiredAt      time.Time  `gorm:"column:hired_at;size:64;not null"`
+	DepartedAt   *time.Time `gorm:"column:departed_at;size:64"`
 }
 
 func (MigPostgresEmployee) TableName() string {

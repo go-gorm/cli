@@ -7,17 +7,17 @@ import (
 )
 
 type MigPostgresType struct {
-	ID        int64      `gorm:"primaryKey;column:id"`
-	Flag      bool       `gorm:"column:flag"`
-	Counter   int16      `gorm:"column:counter"`
-	Score     int32      `gorm:"column:score"`
-	Balance   int64      `gorm:"column:balance"`
-	Ratio     float32    `gorm:"column:ratio"`
-	Price     float64    `gorm:"column:price"`
-	Payload   []byte     `gorm:"column:payload"`
-	Name      string     `gorm:"column:name"`
-	CreatedAt time.Time  `gorm:"column:created_at"`
-	ExpiresAt *time.Time `gorm:"column:expires_at"`
+	ID        int64      `gorm:"primaryKey;column:id;size:64;not null"`
+	Flag      bool       `gorm:"column:flag;size:8;not null"`
+	Counter   int16      `gorm:"column:counter;size:16;not null"`
+	Score     int32      `gorm:"column:score;size:32;not null"`
+	Balance   int64      `gorm:"column:balance;size:64;not null"`
+	Ratio     float32    `gorm:"column:ratio;size:32;not null"`
+	Price     float64    `gorm:"column:price;size:64;not null"`
+	Payload   []byte     `gorm:"column:payload;size:9223372036854775807;not null"`
+	Name      string     `gorm:"column:name;type:text;size:9223372036854775807;not null"`
+	CreatedAt time.Time  `gorm:"column:created_at;size:64;not null"`
+	ExpiresAt *time.Time `gorm:"column:expires_at;size:64"`
 }
 
 func (MigPostgresType) TableName() string {

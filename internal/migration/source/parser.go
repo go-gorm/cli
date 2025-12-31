@@ -240,11 +240,32 @@ func encodeField(db *gorm.DB, field *gormSchema.Field) FieldSnapshot {
 		dataType = strings.ReplaceAll(dataType, " unsigned", "")
 		dataType = strings.ReplaceAll(dataType, " auto_increment", "")
 		dataType = strings.TrimSpace(dataType)
+		
+		// Normalize Postgres/GORM types
+		switch strings.ToLower(dataType) {
+		case "bigserial":
+			dataType = "bigint"
+		case "serial":
+			dataType = "integer"
+		case "int8":
+			dataType = "bigint"
+		case "int4":
+			dataType = "integer"
+		case "bool":
+			dataType = "boolean"
+		case "numeric":
+			dataType = "decimal"
+		case "float4":
+			dataType = "float"
+		case "float8":
+			dataType = "double"
+		}
 	}
 
 	size := field.Size
 	switch dataType {
-	case "int", "integer", "bigint", "smallint", "tinyint", "mediumint", "float", "double":
+	case "int", "integer", "bigint", "smallint", "tinyint", "mediumint", "float", "double", "decimal", "numeric",
+		"timestamp", "timestamptz", "time":
 		size = 0
 	}
 

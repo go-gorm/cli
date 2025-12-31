@@ -141,7 +141,6 @@ func fieldsEqual(a, b *schema.Field) bool {
 		a.Scale == b.Scale &&
 		a.IsNullable == b.IsNullable &&
 		a.IsUnique == b.IsUnique &&
-		(a.DefaultValue != nil) == (b.DefaultValue != nil) &&
 		strings.TrimSpace(strings.ToLower(aDefault)) == strings.TrimSpace(strings.ToLower(bDefault))
 }
 
