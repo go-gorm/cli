@@ -80,7 +80,7 @@ func newUpCmd(mgr *Manager) *cobra.Command {
 			if limit > 0 {
 				flags = append(flags, fmt.Sprintf("--limit=%d", limit))
 			}
-			return mgr.runRunner(cmd, "up", flags)
+			return mgr.RunRunner(cmd, "up", flags)
 		},
 	}
 
@@ -99,7 +99,7 @@ func newDownCmd(mgr *Manager) *cobra.Command {
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := []string{fmt.Sprintf("--steps=%d", steps)}
-			return mgr.runRunner(cmd, "down", flags)
+			return mgr.RunRunner(cmd, "down", flags)
 		},
 	}
 
@@ -115,7 +115,7 @@ func newStatusCmd(mgr *Manager) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return mgr.runRunner(cmd, "status", nil)
+			return mgr.RunRunner(cmd, "status", nil)
 		},
 	}
 
@@ -124,6 +124,7 @@ func newStatusCmd(mgr *Manager) *cobra.Command {
 
 func newDiffCmd(mgr *Manager) *cobra.Command {
 	var generated bool
+
 	cmd := &cobra.Command{
 		Use:          "diff",
 		Short:        "Model ↔ DB diff (read-only)",
@@ -140,9 +141,10 @@ func newDiffCmd(mgr *Manager) *cobra.Command {
 			if generated {
 				subArgs = append(subArgs, "--generated-file")
 			}
-			return mgr.runRunner(cmd, "diff", subArgs)
+			return mgr.RunRunner(cmd, "diff", subArgs)
 		},
 	}
+
 	cmd.Flags().BoolVar(&generated, "generated-file", false, "internal flag used for diff helper generation")
 	_ = cmd.Flags().MarkHidden("generated-file")
 
@@ -158,7 +160,7 @@ func newReflectCmd(mgr *Manager) *cobra.Command {
 		Short:        "Reflect DB schema into models (DB → Model)",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error{
 			subArgs := []string{}
 			if dryRun {
 				subArgs = append(subArgs, "--dry-run")
@@ -166,7 +168,7 @@ func newReflectCmd(mgr *Manager) *cobra.Command {
 			if yes {
 				subArgs = append(subArgs, "--yes")
 			}
-			return mgr.runRunner(cmd, "reflect", subArgs)
+			return mgr.RunRunner(cmd, "reflect", subArgs)
 		},
 	}
 
@@ -195,6 +197,7 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			subArgs := []string{name}
+
 			if dryRun {
 				subArgs = append(subArgs, "--dry-run")
 			}
@@ -209,7 +212,8 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 				}
 				defer cleanupDiffFile(path)
 			}
-			return mgr.runRunner(cmd, "create", subArgs)
+
+			return mgr.RunRunner(cmd, "create", subArgs)
 		},
 	}
 
@@ -220,7 +224,8 @@ func newCreateCmd(mgr *Manager) *cobra.Command {
 	return cmd
 }
 
-func (mgr *Manager) runRunner(cmd *cobra.Command, subcommand string, args []string) error {
+// RunRunner executes the migration runner with the given command.
+func (mgr *Manager) RunRunner(cmd *cobra.Command, subcommand string, args []string) error {
 	goArgs := append([]string{"run", ".", subcommand}, args...)
 	proc := exec.CommandContext(cmd.Context(), mgr.GoCmd, goArgs...)
 	proc.Dir = project.ResolveRootPath(mgr.MigrationsDir)
@@ -228,6 +233,7 @@ func (mgr *Manager) runRunner(cmd *cobra.Command, subcommand string, args []stri
 	proc.Stderr = cmd.ErrOrStderr()
 	proc.Stdin = cmd.InOrStdin()
 	proc.Env = os.Environ()
+
 	if err := proc.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -235,6 +241,7 @@ func (mgr *Manager) runRunner(cmd *cobra.Command, subcommand string, args []stri
 		}
 		return err
 	}
+
 	return nil
 }
 

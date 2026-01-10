@@ -1,17 +1,16 @@
 package migration
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 	"time"
 
 	"gorm.io/cli/gorm/internal/migration/adapter"
+	"gorm.io/cli/gorm/internal/migration/templates"
 	"gorm.io/cli/gorm/internal/project"
 	"gorm.io/gorm"
 )
@@ -198,9 +197,12 @@ func (r *Migrator) writeEmptyMigration(name string, dryRun, yes bool) error {
 }
 
 func renderEmptyMigration(name string) string {
-	var buf bytes.Buffer
-	_ = emptyMigrationTemplate.Execute(&buf, struct{ Name string }{Name: name})
-	return buf.String()
+	content, err := templates.RenderMigrationFile(name)
+	if err != nil {
+		log.Printf("failed to render migration template: %v", err)
+		return ""
+	}
+	return content
 }
 
 func (r *Migrator) runUp(adp adapter.Adapter, args []string) error {
@@ -223,24 +225,3 @@ func (r *Migrator) runDown(adp adapter.Adapter, args []string) error {
 	return adp.Down(adapter.DownOptions{Steps: *steps})
 }
 
-var emptyMigrationTemplate = template.Must(template.New("migration").Parse(`package main
-
-import (
-    "gorm.io/cli/gorm/migration"
-    "gorm.io/gorm"
-)
-
-func init() {
-    register(migration.Migration{
-        Name: "{{.Name}}",
-        Up: func(tx *gorm.DB) error {
-            // TODO: implement forward migration logic
-            return nil
-        },
-        Down: func(tx *gorm.DB) error {
-            // TODO: implement rollback logic
-            return nil
-        },
-    })
-}
-`))
