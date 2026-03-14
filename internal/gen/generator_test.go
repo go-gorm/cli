@@ -179,6 +179,10 @@ func TestProcessStructType(t *testing.T) {
 			{Name: "IsAdult", DBName: "is_adult", GoType: "bool"},
 			{Name: "Profile", DBName: "profile", GoType: "string", NamedGoType: "json"},
 			{Name: "AwardTypes", DBName: "award_types", GoType: "datatypes.JSONSlice[int]"},
+			{Name: "TagTypes", DBName: "tag_types", GoType: "datatypes.JSONSlice[UserTagType]"},
+			{Name: "Tag", DBName: "tag", GoType: "UserTagType"},
+			{Name: "Enum", DBName: "enum", GoType: "enum.Enum"}, // 添加
+			{Name: "Enum2", DBName: "enum2", GoType: "enum2.Enum"},
 		},
 	}
 

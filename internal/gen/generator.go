@@ -433,12 +433,21 @@ func (f Field) Type() string {
 	}
 
 	// Check if type implements allowed interfaces
+	goType := strings.TrimPrefix(f.GoType, "*")
+
 	var (
-		goType  = strings.TrimPrefix(f.GoType, "*")
-		pkgIdx  = strings.LastIndex(goType, ".")
+		pkgIdx  int
 		pkgName = f.file.Package
 		typName = goType
 	)
+
+	// Find the last '.' before any generic bracket '['
+	bracketIdx := strings.Index(goType, "[")
+	if bracketIdx != -1 {
+		pkgIdx = strings.LastIndex(goType[:bracketIdx], ".")
+	} else {
+		pkgIdx = strings.LastIndex(goType, ".")
+	}
 
 	if pkgIdx > 0 {
 		pkgName, typName = goType[:pkgIdx], goType[pkgIdx+1:]
@@ -453,21 +462,88 @@ func (f Field) Type() string {
 		return fmt.Sprintf("field.Number[%s]", goType)
 	}
 
+	// Process generic type parameters to convert full paths to short names
+	goType = f.processGenericType(goType)
+
 	if typ := loadNamedType(f.file.goModDir, f.file.getFullImportPath(pkgName), typName); typ != nil {
-		if ImplementsAllowedInterfaces(typ) { // For interface-implementing types, use generic Field
-			return fmt.Sprintf("field.Field[%s]", filepath.Base(goType))
+		if ImplementsAllowedInterfaces(typ) || IsUnderlyingComparable(typ) {
+			return fmt.Sprintf("field.Field[%s]", goType)
 		}
 	}
 
 	// Check if this is a relation field based on its type
 	if strings.HasPrefix(goType, "[]") {
-		elementType := filepath.Base(strings.TrimPrefix(goType, "[]"))
+		elementType := strings.TrimPrefix(goType, "[]")
 		return fmt.Sprintf("field.Slice[%s]", elementType)
 	} else if strings.Contains(goType, ".") {
-		return fmt.Sprintf("field.Struct[%s]", filepath.Base(goType))
+		return fmt.Sprintf("field.Struct[%s]", goType)
 	}
 
-	return fmt.Sprintf("field.Field[%s]", filepath.Base(goType))
+	return fmt.Sprintf("field.Field[%s]", goType)
+}
+
+// processGenericType converts full package paths in generic type parameters to short names
+// and ensures required imports are added
+// e.g., "datatypes.JSONSlice[gorm.io/cli/gorm/examples/models.UserTagType]"
+//
+//	-> "datatypes.JSONSlice[models.UserTagType]"
+func (f Field) processGenericType(goType string) string {
+	goType = strings.TrimSpace(goType)
+
+	// Handle pointer types by recursively processing without the pointer prefix
+	if strings.HasPrefix(goType, "*") {
+		return f.processGenericType(goType[1:])
+	}
+
+	// Handle slice types by recursively processing the element type
+	if strings.HasPrefix(goType, "[]") {
+		return "[]" + f.processGenericType(goType[2:])
+	}
+
+	// Split the type into the main identifier and the generic arguments (separated by '[')
+	mainPart, argsPart, hasArgs := strings.Cut(goType, "[")
+
+	// Resolve the package alias for the main type
+	shortMain := f.file.getImportAliasType(mainPart)
+
+	// If generic arguments exist, process them recursively
+	if hasArgs {
+		// Remove the trailing closing bracket ']' from the arguments part
+		cleanArgs := strings.TrimSuffix(argsPart, "]")
+
+		// Split the arguments string by comma, respecting nested brackets
+		// e.g., "TypeA, Map[K,V]" -> ["TypeA", "Map[K,V]"]
+		args := splitGenericArgs(cleanArgs)
+
+		var simplifiedArgs []string
+		for _, arg := range args {
+			simplifiedArgs = append(simplifiedArgs, f.processGenericType(arg))
+		}
+
+		return shortMain + "[" + strings.Join(simplifiedArgs, ", ") + "]"
+	}
+
+	return shortMain
+}
+
+// getImportAliasType returns the import alias type string for a raw type string
+// e.g., "datatypes2 gorm.io/datatypes.JSONSlice" -> "datatypes2.JSONSlice"
+func (p *File) getImportAliasType(raw string) string {
+	lastDot := strings.LastIndex(raw, ".")
+	if lastDot == -1 {
+		return raw
+	}
+
+	pathStr := raw[:lastDot]
+	typeName := raw[lastDot+1:]
+
+	pkgName := filepath.Base(pathStr)
+	imp := p.getImport(pathStr)
+	if imp != nil {
+		pkgName = imp.Name
+	}
+
+	return pkgName + "." + typeName
 }
 
 // Value returns the field value string with column name for template generation
@@ -775,6 +851,15 @@ func (p *File) getFullImportPath(shortName string) string {
 		}
 	}
 	return shortName
+}
+
+func (p *File) getImport(path string) *Import {
+	for _, i := range p.Imports {
+		if i.Path == path {
+			return &i
+		}
+	}
+	return nil
 }
 
 // handleAnonymousEmbedding processes anonymous embedded fields and returns true if handled
